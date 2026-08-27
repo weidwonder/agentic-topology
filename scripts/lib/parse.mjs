@@ -67,7 +67,8 @@ function parseBlock(rawLines, start, indent, path, lines) {
       if (!content.startsWith('- ')) break;
       const itemText = content.slice(2);
       const itemPath = `${path}[${value.length}]`;
-      if (itemText.includes(':')) {
+      const inlineKey = itemText.match(/^([^:]+):(?:\s|$)/);
+      if (inlineKey) {
         const item = {};
         value.push(item);
         const colon = itemText.indexOf(':');

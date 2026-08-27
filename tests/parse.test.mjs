@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseTopology, TopologyError } from '../scripts/lib/parse.mjs';
-import { FX } from './helpers.mjs';
+import { FX, catchErr } from './helpers.mjs';
 
 const read = (p) => readFileSync(p, 'utf8');
 
@@ -29,9 +29,9 @@ const BAD = [
 ];
 for (const [name, msgRe] of BAD) {
   test(`拒绝不支持的语法：${name}`, () => {
-    const err = assert.throws(
-      () => parseTopology(read(FX(`syntax/${name}.topology.yaml`)), `${name}.yaml`),
-      TopologyError);
+    const err = catchErr(
+      () => parseTopology(read(FX(`syntax/${name}.topology.yaml`)), `${name}.yaml`));
+    assert.ok(err instanceof TopologyError, `抛的不是 TopologyError：${err}`);
     assert.equal(err.code, 'E_SYNTAX');
     assert.equal(typeof err.line, 'number');
     assert.ok(err.line > 1, `行号必须指到犯错那行，实际 ${err.line}`);
@@ -51,7 +51,8 @@ test('JSON 输入走原生解析', () => {
 });
 
 test('BOM 开头报错', () => {
-  const err = assert.throws(() => parseTopology('\uFEFFa: 1\n', 'x.yaml'), TopologyError);
+  const err = catchErr(() => parseTopology('\uFEFFa: 1\n', 'x.yaml'));
+  assert.ok(err instanceof TopologyError);
   assert.equal(err.code, 'E_SYNTAX');
   assert.match(err.message, /BOM/);
 });

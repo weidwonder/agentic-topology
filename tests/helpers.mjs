@@ -94,6 +94,12 @@ export function walk(dir, filter = () => true, acc = []) {
   return acc;
 }
 
+/** 捕获并返回 fn 抛出的错误。assert.throws 不返回错误对象，要断言 code/line 必须用它。 */
+export function catchErr(fn) {
+  try { fn(); } catch (e) { return e; }
+  assert.fail('期望抛出 TopologyError，但没有抛');
+}
+
 /** 两个矩形是否相交（边界相接不算相交）。 */
 export function intersects(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
