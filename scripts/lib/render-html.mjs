@@ -120,7 +120,12 @@ function overview(data, pageLayout) {
     `<span class="topo-crumb">${WORDS.labels.overview}</span></div><div class="screen">` +
     `<div class="row"><span class="badge badge-secondary">${value(WORDS.topology[data.graph?.topology])}</span>` +
     `<span class="badge badge-outline">${value(WORDS.context[data.graph?.context_sharing])}</span>` +
-    `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0}</span></div>` +
+    `<span class="topo-flag is-sure">${(data.nodes || []).length} 个方块</span>` +
+    `<span class="topo-flag is-sure">${(data.edges || []).length} 条连线</span>` +
+    `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</span>` +
+    `<span class="text-xs muted">查证时间 ${value(data.generated_at)}</span></div>` +
+    `${data.analysis_complete === false ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : ''}` +
+    `${(data.nodes || []).length === 0 ? '<div class="alert"><strong>还没有可画的东西</strong><span class="text-sm muted">打开写好的描述，填入方块和连线后再出图。</span></div>' : ''}` +
     filterControls(data) +
     `<div class="topo-legend"><span class="topo-legend-item"><span class="topo-swatch"></span>` +
     `${esc(WORDS.category.normal)}</span>` +
