@@ -4,6 +4,7 @@
 .topo-frame-label { position: absolute; top: -10px; left: 12px; padding: 0 8px; background: var(--card); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
 .topo-edges { position: absolute; inset: 0; pointer-events: none; }
 .topo-edge { fill: none; stroke-width: 1.6; }
+.is-hidden { display: none !important; }
 .topo-edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
 .topo-edge.is-main { stroke: var(--primary); }
 .topo-edge.is-ok { stroke: var(--success); }
@@ -21,6 +22,10 @@
 .topo-node-go { margin-left: auto; display: inline-flex; padding: 1px 5px; border-radius: 999px; font-size: 10px; background: var(--primary); color: var(--primary-foreground); }
 .topo-pill { position: absolute; box-sizing: border-box; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--primary); background: var(--card); font-size: 11px; color: var(--primary); text-align: center; }
 .topo-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 11px; color: var(--muted-foreground); }
+.topo-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.topo-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.topo-filters legend { padding: 0 4px; color: var(--muted-foreground); font-size: 11px; }
+.topo-filter-option { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
 .topo-legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .topo-swatch { width: 20px; height: 0; border-top: 2px solid var(--primary); }
 .topo-swatch.is-ok { border-top-color: var(--success); }

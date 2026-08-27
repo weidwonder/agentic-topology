@@ -101,9 +101,11 @@ function overview(data, pageLayout) {
       edge.category === 'reject_or_halt' ? 'is-back' : 'is-main';
     const trust = edge.confidence === 'certain' ? '' : ` is-${edge.confidence}`;
     const edgeId = `${edge.from}->${edge.to}`;
-    return `<path class="topo-edge ${cls}${trust}" d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
+    return `<path class="topo-edge ${cls}${trust}" data-edge-id="${value(edgeId)}"` +
+      ` d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
       `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}"/>` +
-      `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`;
+      `<text class="topo-elabel" data-edge-id="${value(edgeId)}" x="${edge.labelX}"` +
+      ` y="${edge.labelY}">${value(edge.label)}</text>`;
   }).join('');
   const nodes = [...pageLayout.nodes.entries()].map(([id, box]) =>
     nodeHtml(data.nodes.find((node) => node.id === id), box)).join('');
@@ -119,6 +121,7 @@ function overview(data, pageLayout) {
     `<div class="row"><span class="badge badge-secondary">${value(WORDS.topology[data.graph?.topology])}</span>` +
     `<span class="badge badge-outline">${value(WORDS.context[data.graph?.context_sharing])}</span>` +
     `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0}</span></div>` +
+    filterControls(data) +
     `<div class="topo-legend"><span class="topo-legend-item"><span class="topo-swatch"></span>` +
     `${esc(WORDS.category.normal)}</span>` +
     `<span class="topo-legend-item"><span class="topo-swatch is-ok"></span>${esc(WORDS.category.pass_or_skip)}</span>` +
@@ -138,6 +141,19 @@ function overview(data, pageLayout) {
     `${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</div></div>` +
     `<div class="card-content"><ul class="list">${checklist}</ul></div></div>`;
   return `${head}${diagram}${checklistCard}${ending}`;
+}
+
+function filterControls(data) {
+  const checkbox = (dimension, key, label) => `<label class="topo-filter-option">` +
+    `<input type="checkbox" data-filter-dimension="${esc(dimension)}" value="${esc(key)}">` +
+    `<span>${value(label)}</span></label>`;
+  const confidence = Object.entries(WORDS.confidence)
+    .map(([key, label]) => checkbox('confidence', key, label)).join('');
+  const kinds = Object.entries(WORDS.kind).map(([key, label]) => checkbox('kind', key, label)).join('');
+  const groups = (data.groups || []).map((group) => checkbox('group', group.id, group.name)).join('');
+  return `<div class="topo-filters"><fieldset><legend>查得准不准</legend>${confidence}</fieldset>` +
+    `<fieldset><legend>AI 还是程序</legend>${kinds}</fieldset>` +
+    `<fieldset><legend>分堆</legend>${groups || '<span class="muted text-xs">没有分堆</span>'}</fieldset></div>`;
 }
 
 function kv(label, content) {
