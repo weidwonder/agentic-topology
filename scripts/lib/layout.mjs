@@ -414,25 +414,58 @@ export function layoutFolded(data) {
     const index = cards.size - 1;
     x += cardWidth + (gaps[index] || 0);
   }
+  const warnings = [];
+  const placedLabels = [];
+  const gapUsage = new Map();
   const edges = edgeLabels.map(({ edge, label, size }) => {
     const from = cards.get(edge.from);
     const to = cards.get(edge.to);
     const start = { x: from.x + from.w, y: from.y + from.h / 2 };
     const end = { x: to.x, y: to.y + to.h / 2 };
-    const labelX = (start.x + end.x) / 2;
-    const labelY = start.y - 12;
+    const fromIndex = cardIndex.get(edge.from);
+    const toIndex = cardIndex.get(edge.to);
+    const gapIndex = Math.min(fromIndex, toIndex);
+    const gapLeft = cards.get(summary.cards[gapIndex].id).x + cardWidth;
+    const gapRight = cards.get(summary.cards[gapIndex + 1].id).x;
+    const labelX = (gapLeft + gapRight) / 2;
+    const usage = gapUsage.get(gapIndex) || 0;
+    gapUsage.set(gapIndex, usage + 1);
+    const baseY = start.y - 12 - usage * 18;
+    const obstacles = [...cards.values(), ...placedLabels];
+    const fits = (point) => !obstacles.some((obstacle) => intersects(labelBox(point, size), obstacle));
+    let point = { x: labelX, y: baseY };
+    let unresolved = false;
+    if (!fits(point)) {
+      let found = false;
+      for (let step = 1; step <= 6; step += 1) {
+        for (const delta of [-18 * step, 18 * step]) {
+          const candidate = { x: labelX, y: baseY + delta };
+          if (fits(candidate)) {
+            point = candidate;
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (!found) {
+        unresolved = true;
+        warnings.push(`layout: folded label overlap at ${edge.from}->${edge.to}`);
+      }
+    }
+    placedLabels.push(labelBox(point, size));
     return {
       from: edge.from,
       to: edge.to,
       d: `M${round(start.x)},${round(start.y)} L${round(end.x)},${round(end.y)}`,
       label,
-      labelX: round(labelX),
-      labelY: round(labelY),
+      labelX: round(point.x),
+      labelY: round(point.y),
       labelW: size.w,
       labelH: size.h,
       category: edge.category,
-      confidence: 'certain',
-      overlapUnresolved: false,
+      confidence: edge.confidence,
+      overlapUnresolved: unresolved,
     };
   });
   const maxX = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.x + card.w));
@@ -441,6 +474,6 @@ export function layoutFolded(data) {
     stage: { w: maxX + M.STAGE_PAD, h: maxY + M.STAGE_PAD },
     cards,
     edges,
-    warnings: [],
+    warnings,
   };
 }

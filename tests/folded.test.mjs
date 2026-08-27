@@ -53,3 +53,19 @@ test('折叠视图有全部展开按钮与不丢信息的说明', () => {
   assert.match(v, /一个方块一条线都没少/);
   assert.match(v, /收起来只是不显示堆里面那\s*\d+\s*条线/);
 });
+
+test('跨堆连线标签放在首个真实间隙且不覆盖卡片', () => {
+  const doc = data(FX('folded-span.topology.yaml'));
+  const F = layoutFolded(doc);
+  for (const e of F.edges) {
+    const lb = { x: e.labelX - e.labelW / 2, y: e.labelY - e.labelH / 2, w: e.labelW, h: e.labelH };
+    for (const c of F.cards.values()) assert.equal(intersects(lb, c), false);
+  }
+  const span = F.edges.find((e) => e.from === 'g1' && e.to === 'g3');
+  assert.equal(span.confidence, 'inferred');
+  assert.equal(span.overlapUnresolved, false);
+  assert.equal(F.edges.every((e) => e.overlapUnresolved === false), true);
+  const html = renderOk(FX('folded-span.topology.yaml'), 'folded-span.html');
+  const folded = sect(html, 'view-folded');
+  assert.match(folded, /topo-edge[^>]*is-inferred/);
+});

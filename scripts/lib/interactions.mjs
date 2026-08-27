@@ -50,6 +50,31 @@ function majorityCategory(edges) {
   return best;
 }
 
+function conservativeConfidence(edges) {
+  if (edges.some((edge) => edge.confidence === 'unread')) return 'unread';
+  if (edges.some((edge) => edge.confidence === 'inferred')) return 'inferred';
+  return 'certain';
+}
+
+/** 按可信度、执行者类型和分组取交集，返回仍可见的节点与连线键。 */
+export function applyFilter(data, { confidence = null, kind = null, group = null } = {}) {
+  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+  const edges = Array.isArray(data.edges) ? data.edges : [];
+  const visibleNodes = nodes.filter((node) => {
+    const confidenceMatch = !confidence || confidence.includes(node.confidence);
+    const kindMatch = !kind || kind.includes(node.kind);
+    const groupMatch = !group || group.includes(node.group);
+    return confidenceMatch && kindMatch && groupMatch;
+  });
+  const visibleIds = new Set(visibleNodes.map((node) => node.id));
+  return {
+    visibleNodeIds: visibleNodes.map((node) => node.id),
+    visibleEdgeKeys: edges
+      .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
+      .map((edge) => `${edge.from}->${edge.to}`),
+  };
+}
+
 /** 从拓扑数据推导折叠卡片与堆间合并连线，不计算任何坐标。 */
 export function foldSummary(data) {
   const groups = groupList(data);
@@ -87,6 +112,7 @@ export function foldSummary(data) {
       sourceEdgeKeys: source.map((edge) => `${edge.from}->${edge.to}`),
       payloadCount: source.reduce((sum, edge) => sum + (edge.payloads || []).length, 0),
       category: majorityCategory(source),
+      confidence: conservativeConfidence(source),
     };
   });
   return { cards, interGroupEdges };

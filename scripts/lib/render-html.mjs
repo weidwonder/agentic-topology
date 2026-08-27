@@ -286,8 +286,13 @@ function folded(data) {
       `<div class="text-xs muted">${value(card.chain)}</div>` +
       `<div class="text-xs muted">${value(badges)}</div></div>`;
   }).join('');
-  const lines = foldedLayout.edges.map((edge) => `<path class="topo-edge is-main" d="${esc(edge.d)}"/>` +
-    `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`).join('');
+  const lines = foldedLayout.edges.map((edge) => {
+    const categoryClass = edge.category === 'pass_or_skip' ? 'is-ok' :
+      edge.category === 'reject_or_halt' ? 'is-back' : 'is-main';
+    const trustClass = edge.confidence === 'certain' ? '' : ` is-${edge.confidence}`;
+    return `<path class="topo-edge ${categoryClass}${trustClass}" d="${esc(edge.d)}"/>` +
+      `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`;
+  }).join('');
   const innerCount = summary.cards.reduce((sum, card) => sum + card.innerEdgeKeys.length, 0);
   const stage = `<div class="topo-wrap"><div class="topo-stage" style="width:${foldedLayout.stage.w}px;` +
     `height:${foldedLayout.stage.h}px"><svg class="topo-edges" viewBox="0 0 ${foldedLayout.stage.w} ` +
