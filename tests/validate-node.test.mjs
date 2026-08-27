@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { FX, load } from './helpers.mjs';
 import { validate } from '../scripts/lib/validate.mjs';
 
-const run = (name) => { const { data, lines } = load(FX(`rules/${name}.topology.yaml`)); return validate(data, lines); };
+const run = (name) => {
+  const { data, lines } = load(FX(`rules/${name}.topology.yaml`));
+  return validate(data, lines);
+};
 
 test('基准 fixture 本身必须通过', () => {
   const { data, lines } = load(FX('base.topology.yaml'));

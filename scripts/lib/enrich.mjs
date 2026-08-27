@@ -16,6 +16,7 @@ function sourceOf(item, fallbackDate) {
 function itemText(level, ref, field) {
   if (level === 'node') return `方块 ${ref} 需要你核实`;
   if (level === 'edge') return `连线 ${ref} 需要你核实`;
+  if (field === 'system_prompt') return `${ref} 的提示词需要你核实`;
   return `${ref} 的 ${field} 需要你核实`;
 }
 
@@ -54,6 +55,17 @@ async function promptView(node, baseDir, warnings, checklist, fallbackDate) {
     const lines = text.split(/\r?\n/);
     const from = Number(prompt.from) || 1;
     const to = Number(prompt.to) || lines.length;
+    if (from < 1 || to < from || to > lines.length) {
+      addChecklist(checklist, 'field', node.id, 'system_prompt', 'unread', node, fallbackDate);
+      warnings.push(`prompt: range out of bounds for ${node.id}`);
+      return {
+        kind: 'unreadable',
+        file: prompt.file,
+        from,
+        to,
+        reason: '提示词行区间超出文件范围',
+      };
+    }
     return {
       kind: 'file',
       file: prompt.file,

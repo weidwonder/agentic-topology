@@ -1,17 +1,4 @@
-function applyFilter(data, { confidence = null, kind = null, group = null } = {}) {
-  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
-  const edges = Array.isArray(data.edges) ? data.edges : [];
-  const filters = { confidence, kind, group };
-  const visibleNodes = nodes.filter((node) => Object.entries(filters).every(([dimension, values]) =>
-    !values || values.includes(node[dimension])));
-  const visibleIds = new Set(visibleNodes.map((node) => node.id));
-  return {
-    visibleNodeIds: visibleNodes.map((node) => node.id),
-    visibleEdgeKeys: edges
-      .filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to))
-      .map((edge) => `${edge.from}->${edge.to}`),
-  };
-}
+/*SLOT:APPLY_FILTER*/
 
 function syncFilters() {
   const dataElement = document.getElementById('topology-data');

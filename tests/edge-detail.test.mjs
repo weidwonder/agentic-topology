@@ -12,7 +12,8 @@ const seg = (fx, out, key) => {
 
 test('边详情六项齐全', () => {
   const s = seg('multi-payload.topology.yaml', 'ed.html', 'N2->N3');
-  for (const w of ['正常往下走', '什么情况下走', '靠什么交过去', '同时来了好几份怎么办', '查证时间'])
+  for (const w of ['正常往下走', '什么情况下走', '靠什么交过去',
+    '同时来了好几份怎么办', '查证时间'])
     assert.ok(s.includes(w), `边详情缺「${w}」`);
   assert.ok(s.includes('复用未命中'), 'trigger 的值要显示全，不是截断版');
 });
@@ -21,7 +22,8 @@ test('5 个传递物全部列出，产生与传递时机各自可见', () => {
   const s = seg('multi-payload.topology.yaml', 'ed.html', 'N2->N3');
   assert.equal((s.match(/什么时候造出来的/g) || []).length, 5);
   assert.equal((s.match(/什么时候交出去的/g) || []).length, 5);
-  for (const c of ['活儿说明文件', '开工纪律', '判分标准全文', '上轮打回原因', '一次性的交结论凭据'])
+  for (const c of ['活儿说明文件', '开工纪律', '判分标准全文',
+    '上轮打回原因', '一次性的交结论凭据'])
     assert.ok(s.includes(c), `漏了传递物「${c}」`);
 });
 

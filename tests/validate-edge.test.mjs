@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { FX, load, validateCli, renderFail, renderOk, bodyText } from './helpers.mjs';
 import { validate } from '../scripts/lib/validate.mjs';
 
-const run = (name) => { const { data, lines } = load(FX(`rules/${name}.topology.yaml`)); return validate(data, lines); };
+const run = (name) => {
+  const { data, lines } = load(FX(`rules/${name}.topology.yaml`));
+  return validate(data, lines);
+};
 
 const CASES = [
   ['R-15', 'E_REQUIRED', 'edges[0].concurrency_control'],

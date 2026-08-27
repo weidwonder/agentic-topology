@@ -43,7 +43,9 @@ test('可解决的标签一律不与节点框、分组框相交', () => {
     for (const b of boxes)
       assert.equal(intersects(lb, b), false, `边 ${e.from}→${e.to} 的标签压在方块上`);
   }
-  assert.ok(checked >= 4, `至少应有 4 条边的标签是可解决的，实际 ${checked} —— 实现不得靠把标签全标成 unresolved 来绕过本测试`);
+  const message = `至少应有 4 条边的标签是可解决的，实际 ${checked} —— ` +
+    '实现不得靠把标签全标成 unresolved 来绕过本测试';
+  assert.ok(checked >= 4, message);
 });
 
 test('退让失败时不静默：置 overlapUnresolved 并各记一条 warning', () => {

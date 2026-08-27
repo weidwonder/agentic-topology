@@ -469,7 +469,25 @@ export function layoutFolded(data) {
     };
   });
   const maxX = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.x + card.w));
-  const maxY = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.y + card.h));
+  const labelExtents = edges.map((edge) => ({
+    x: edge.labelX - edge.labelW / 2,
+    y: edge.labelY - edge.labelH / 2,
+    w: edge.labelW,
+    h: edge.labelH,
+  }));
+  const extents = [...cards.values(), ...labelExtents];
+  const minY = Math.min(...extents.map((box) => box.y));
+  const shiftY = Math.max(0, M.STAGE_PAD - minY);
+  if (shiftY) {
+    for (const card of cards.values()) card.y += shiftY;
+    for (const edge of edges) {
+      edge.labelY += shiftY;
+      edge.d = edge.d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (_, xValue, yValue) =>
+        `${round(Number(xValue))},${round(Number(yValue) + shiftY)}`);
+    }
+  }
+  const maxY = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.y + card.h),
+    ...edges.map((edge) => edge.labelY + edge.labelH / 2));
   return {
     stage: { w: maxX + M.STAGE_PAD, h: maxY + M.STAGE_PAD },
     cards,

@@ -1,14 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { layoutFolded } from './layout.mjs';
-import { foldSummary } from './interactions.mjs';
+import { applyFilter, foldSummary } from './interactions.mjs';
 
 const ASSET_DIR = fileURLToPath(new URL('../../assets/page-shell/', import.meta.url));
 const SHELL = readFileSync(`${ASSET_DIR}/shell.html`, 'utf8');
 const THEME = readFileSync(`${ASSET_DIR}/theme.css`, 'utf8');
 const COMPONENTS = readFileSync(`${ASSET_DIR}/components.css`, 'utf8');
 const TOPO = readFileSync(`${ASSET_DIR}/topo.css`, 'utf8');
-const APP = readFileSync(`${ASSET_DIR}/app.js`, 'utf8');
+const APP = readFileSync(`${ASSET_DIR}/app.js`, 'utf8').replace(
+  '/*SLOT:APPLY_FILTER*/',
+  applyFilter.toString(),
+);
 
 const WORDS = {
   topology: {
@@ -112,6 +115,11 @@ function overview(data, pageLayout) {
   const exits = (data.graph?.exits || []).map((exit) =>
     `<li class="list-item"><span class="badge">${value(exit.name)}</span>` +
     `<span class="text-xs grow">${value(exit.condition)}</span></li>`).join('');
+  const incompleteNotice = data.analysis_complete === false
+    ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : '';
+  const emptyNotice = (data.nodes || []).length === 0
+    ? '<div class="alert"><strong>还没有可画的东西</strong>' +
+      '<span class="text-sm muted">打开写好的描述，填入方块和连线后再出图。</span></div>' : '';
   const marker = (id, color) => `<marker id="${id}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">` +
     `<path d="M0,0 L6,3 L0,6 z" fill="${color}"/></marker>`;
   const markers = `<defs>${marker('ah-main', 'var(--primary)')}${marker('ah-ok', 'var(--success)')}` +
@@ -124,8 +132,7 @@ function overview(data, pageLayout) {
     `<span class="topo-flag is-sure">${(data.edges || []).length} 条连线</span>` +
     `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</span>` +
     `<span class="text-xs muted">查证时间 ${value(data.generated_at)}</span></div>` +
-    `${data.analysis_complete === false ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : ''}` +
-    `${(data.nodes || []).length === 0 ? '<div class="alert"><strong>还没有可画的东西</strong><span class="text-sm muted">打开写好的描述，填入方块和连线后再出图。</span></div>' : ''}` +
+    incompleteNotice + emptyNotice +
     filterControls(data) +
     `<div class="topo-legend"><span class="topo-legend-item"><span class="topo-swatch"></span>` +
     `${esc(WORDS.category.normal)}</span>` +
@@ -169,15 +176,29 @@ function promptSection(node, prompt) {
   if (node.kind !== 'agent') return '';
   const source = prompt || node.system_prompt || {};
   let body = `<span class="topo-flag is-unknown">${esc(WORDS.confidence.unread)}</span>`;
-  if (source.inline !== undefined) {
-    body = `<div class="topo-src"><div class="topo-line"><span>1</span>` +
-      `<span class="mono">${value(source.inline)}</span></div></div>`;
-  } else if (source.file) {
-    body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(source.file)} ` +
-      `${WORDS.labels.line} ${value(source.from)}–${value(source.to)} 行</span></div></div>`;
+  const file = source.file || node.system_prompt?.file;
+  const from = source.from || node.system_prompt?.from || 1;
+  const to = source.to || node.system_prompt?.to || from;
+  if (source.kind === 'inline' || source.inline !== undefined) {
+    const text = source.text !== undefined ? source.text : source.inline;
+    body = `<div class="topo-src"><div class="topo-src-body"><div class="topo-line is-hit">` +
+      `<span>1</span><span class="mono">${value(text)}</span></div></div></div>`;
+  } else if (file && source.kind === 'unreadable') {
+    body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(file)} ` +
+      `${WORDS.labels.line} ${value(from)}–${value(to)} 行</span></div>` +
+      `<div class="topo-src-body"><span class="text-sm muted">读不到这个文件的第 ` +
+      `${value(from)}–${value(to)} 行：` +
+      `${value(source.reason || '无法读取')}</span></div></div>`;
+  } else if (file) {
+    const lines = Array.isArray(source.lines) ? source.lines : [];
+    const renderedLines = lines.map((line, index) => `<div class="topo-line is-hit">` +
+      `<span>${Number(from) + index}</span><span class="mono">${value(line)}</span></div>`).join('');
+    body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(file)} ` +
+      `${WORDS.labels.line} ${value(from)}–${value(to)} 行</span></div>` +
+      `<div class="topo-src-body">${renderedLines}</div></div>`;
   }
-  const mark = source.file
-    ? `${WORDS.labels.line} ${value(source.from)}–${value(source.to)} 行`
+  const mark = file
+    ? `${WORDS.labels.line} ${value(from)}–${value(to)} 行`
     : '';
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.prompt)}` +
     `<span class="topo-acc-mark">${mark}</span></summary><div class="topo-acc-body">${body}</div></details>`;
