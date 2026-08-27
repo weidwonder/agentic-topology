@@ -1,0 +1,9 @@
+# ai-dev-system:gitignore:start
+/.claude/skills/ai-dev-workflow/
+/.claude/skills/ai-prd/
+/.claude/skills/ai-dev-system.version
+/.agents/skills/ai-dev-workflow/
+/.agents/skills/ai-prd/
+/.agents/skills/ai-dev-system.version
+/.codegraph/
+# ai-dev-system:gitignore:end
