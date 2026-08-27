@@ -106,7 +106,10 @@ function nodeCheck(node, index, groupIds, nodeIds, issue) {
   }
   if (node.field_confidence && isObject(node.field_confidence)) {
     for (const [key, val] of Object.entries(node.field_confidence)) {
-      if (!['inferred', 'unread'].includes(val)) {
+      const target = key.split('.').reduce((current, part) => current?.[part], node);
+      if (target === undefined) {
+        issue('E_UNKNOWN_FIELD', `${path}.field_confidence.${key}`, '字段可信度指向不存在的字段');
+      } else if (!['inferred', 'unread'].includes(val)) {
         issue('E_ENUM', `${path}.field_confidence.${key}`, '字段可信度错误');
       }
     }
@@ -181,6 +184,79 @@ export function validate(data, lines = new Map()) {
     }
   });
   const edges = Array.isArray(data.edges) ? data.edges : [];
+  const edgeKeys = new Set([
+    'from', 'to', 'category', 'trigger', 'carrier', 'carrier_note', 'payloads',
+    'concurrency_control', 'screening', 'confidence', 'source', 'field_confidence',
+    'bidirectional', 'reverse', 'both_ways',
+  ]);
+  const payloadKeys = new Set(['content', 'produced_at', 'delivered_at']);
+  const seenPairs = new Map();
+  edges.forEach((edge, index) => {
+    const edgePath = `edges[${index}]`;
+    if (!isObject(edge)) {
+      issue('E_TYPE', edgePath, '边必须是对象');
+      return;
+    }
+    unknown(edge, edgeKeys, edgePath, issue);
+    const requiredEdgeKeys = [
+      'from', 'to', 'category', 'trigger', 'carrier', 'payloads', 'concurrency_control', 'confidence', 'source',
+    ];
+    for (const key of requiredEdgeKeys) {
+      if (!(key in edge)) issue('E_REQUIRED', `${edgePath}.${key}`, `${key} 必填`);
+    }
+    if (!['normal', 'pass_or_skip', 'reject_or_halt'].includes(edge.category)) {
+      issue('E_ENUM', `${edgePath}.category`, 'category 错误');
+    }
+    if (!['file', 'bundle', 'prompt', 'event', 'other'].includes(edge.carrier)) {
+      issue('E_ENUM', `${edgePath}.carrier`, 'carrier 错误');
+    }
+    if (edge.carrier === 'other' && !isString(edge.carrier_note)) {
+      issue('E_CONDITIONAL_REQUIRED', `${edgePath}.carrier_note`, 'carrier_note 必填');
+    }
+    if (!ENUMS.confidence.has(edge.confidence)) {
+      issue('E_ENUM', `${edgePath}.confidence`, 'confidence 错误');
+    }
+    sourceCheck(edge.source, `${edgePath}.source`, issue);
+    if (!Array.isArray(edge.payloads) || edge.payloads.length === 0) {
+      issue('E_REQUIRED', `${edgePath}.payloads`, 'payloads 必须非空');
+    } else {
+      edge.payloads.forEach((payload, payloadIndex) => {
+        const payloadPath = `${edgePath}.payloads[${payloadIndex}]`;
+        unknown(payload, payloadKeys, payloadPath, issue);
+        for (const key of payloadKeys) {
+          if (!isString(payload?.[key])) issue('E_REQUIRED', `${payloadPath}.${key}`, `${key} 必填`);
+        }
+      });
+    }
+    if (!nodeIds.has(edge.from)) issue('E_DANGLING_EDGE', `${edgePath}.from`, '边指向不存在的节点');
+    if (!nodeIds.has(edge.to)) issue('E_DANGLING_EDGE', `${edgePath}.to`, '边指向不存在的节点');
+    if (edge.from === edge.to) issue('E_SELF_LOOP', edgePath, '边不能连接同一个节点');
+    for (const key of ['bidirectional', 'reverse', 'both_ways']) {
+      if (key in edge) issue('E_BIDIRECTIONAL', `${edgePath}.${key}`, '请拆成两条单向边');
+    }
+    const pair = `${edge.from}\u0000${edge.to}`;
+    if (seenPairs.has(pair)) {
+      const other = seenPairs.get(pair);
+      issue('E_DUPLICATE_EDGE', edgePath,
+        `${edgePath} 与 edges[${other}] 同向重复；应合并为一条，用多个传递物表达差异`);
+      issue('E_DUPLICATE_EDGE', `edges[${other}]`,
+        `edges[${other}] 与 ${edgePath} 同向重复；应合并为一条，用多个传递物表达差异`);
+    } else {
+      seenPairs.set(pair, index);
+    }
+    if (!('screening' in edge)) warnings.push({ path: `${edgePath}.screening`, message: '未填写筛查条件' });
+    if (edge.field_confidence && isObject(edge.field_confidence)) {
+      for (const [key, value] of Object.entries(edge.field_confidence)) {
+        const target = key.split('.').reduce((current, part) => current?.[part], edge);
+        const fieldPath = `${edgePath}.field_confidence.${key}`;
+        if (target === undefined) issue('E_UNKNOWN_FIELD', fieldPath, '字段可信度指向不存在的字段');
+        else if (!['inferred', 'unread'].includes(value)) issue('E_ENUM', fieldPath, '字段可信度错误');
+      }
+    }
+  });
+  nodes.forEach((node, index) => {
+    if (node && !('group' in node)) warnings.push({ path: `nodes[${index}].group`, message: '未填写分组' });
+  });
   const stats = {
     nodes: nodes.length,
     edges: edges.length,

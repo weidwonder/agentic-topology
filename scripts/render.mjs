@@ -7,6 +7,13 @@ import { enrich } from './lib/enrich.mjs';
 import { renderHtml } from './lib/render-html.mjs';
 import { writeOutput } from './lib/write-output.mjs';
 
+function textOutput(result) {
+  if (result.ok) return `✅ 描述合格：${result.stats.nodes} 个节点、${result.stats.edges} 条边\n`;
+  const lines = ['❌ 描述不合格，没有出图。下面的问题得先改好：', ''];
+  for (const error of result.errors) lines.push(`[${error.code}] ${error.path}`, `    ${error.message}`, '');
+  return `${lines.join('\n')}\n`;
+}
+
 const input = process.argv[2];
 const outputFlag = process.argv.indexOf('-o');
 const output = outputFlag >= 0
@@ -16,7 +23,7 @@ try {
   const parsed = parseTopology(await readFile(input, 'utf8'), input);
   const result = validate(parsed.data, parsed.lines);
   if (!result.ok) {
-    process.stdout.write(`${JSON.stringify(result.errors)}\n`);
+    process.stdout.write(textOutput(result));
     process.exitCode = 2;
   } else {
     const enriched = await enrich(parsed.data, { baseDir: path.dirname(input) });
