@@ -27,9 +27,11 @@ try {
     process.exitCode = 2;
   } else {
     const enriched = await enrich(parsed.data, { baseDir: path.dirname(input) });
+    const pageLayout = layout(parsed.data);
+    for (const warning of pageLayout.warnings) process.stderr.write(`${warning}\n`);
     const html = renderHtml({
       data: parsed.data,
-      layout: layout(parsed.data),
+      layout: pageLayout,
       folded: null,
       enriched,
     });

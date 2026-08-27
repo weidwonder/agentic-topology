@@ -16,6 +16,12 @@ const CATEGORY_COLORS = {
   reject_or_halt: 'var(--destructive)',
 };
 
+const CATEGORY_MARKERS = {
+  normal: 'ah-main',
+  pass_or_skip: 'ah-ok',
+  reject_or_halt: 'ah-back',
+};
+
 function nodeHeight(node) {
   const responsibility = String(node.responsibility || '');
   const extraLines = Math.max(0, Math.ceil(responsibility.length / 26) - 2);
@@ -98,7 +104,7 @@ function groupDefinitions(data, nodes, edges) {
       if (a.id === '__ungrouped__') return 1;
       if (b.id === '__ungrouped__') return -1;
       if (a.order !== b.order) return a.order - b.order;
-      return a.id.localeCompare(b.id);
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
   }
   return topologicalGroups(definitions, edges, nodes);
@@ -325,8 +331,39 @@ export function layout(data) {
       confidence: edge.confidence,
       color: CATEGORY_COLORS[edge.category] || CATEGORY_COLORS.normal,
       dashed: edge.confidence !== 'certain',
+      strokeDasharray: edge.confidence === 'certain' ? null : '5 4',
+      marker: CATEGORY_MARKERS[edge.category] || CATEGORY_MARKERS.normal,
       overlapUnresolved: placed.unresolved,
     });
+  }
+  const extents = [...nodes.values(), ...groupById.values()];
+  for (const edge of edges) {
+    extents.push({
+      x: edge.labelX - edge.labelW / 2,
+      y: edge.labelY - edge.labelH / 2,
+      w: edge.labelW,
+      h: edge.labelH,
+    });
+    const numbers = edge.d.match(/-?[\d.]+/g).map(Number);
+    for (let i = 0; i < numbers.length; i += 2) {
+      extents.push({ x: numbers[i], y: numbers[i + 1], w: 0, h: 0 });
+    }
+  }
+  const minX = Math.min(...extents.map((box) => box.x));
+  const minY = Math.min(...extents.map((box) => box.y));
+  const shiftX = Math.max(0, M.STAGE_PAD - minX);
+  const shiftY = Math.max(0, M.STAGE_PAD - minY);
+  if (shiftX || shiftY) {
+    for (const box of [...nodes.values(), ...groupById.values()]) {
+      box.x += shiftX;
+      box.y += shiftY;
+    }
+    for (const edge of edges) {
+      edge.labelX += shiftX;
+      edge.labelY += shiftY;
+      edge.d = edge.d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (_, x, y) =>
+        `${round(Number(x) + shiftX)},${round(Number(y) + shiftY)}`);
+    }
   }
   const maxX = Math.max(M.STAGE_PAD, ...[...groupById.values()].map((box) => box.x + box.w));
   const maxY = Math.max(M.STAGE_PAD, ...[...groupById.values()].map((box) => box.y + box.h));
