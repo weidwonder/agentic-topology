@@ -57,7 +57,8 @@ export function foldSummary(data) {
   const nodeGroup = new Map();
   for (const group of groups) for (const node of group.nodes) nodeGroup.set(node.id, group.id);
   const cards = groups.map((group) => {
-    const groupEdges = edges.filter((edge) => nodeGroup.get(edge.from) === group.id && nodeGroup.get(edge.to) === group.id);
+    const groupEdges = edges.filter((edge) => nodeGroup.get(edge.from) === group.id &&
+      nodeGroup.get(edge.to) === group.id);
     return {
       id: group.id,
       name: group.name,

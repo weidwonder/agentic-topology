@@ -31,14 +31,17 @@ const WORDS = {
     concurrency: '同时跑几个', source: '从哪查到的', prompt: '它的提示词写在哪',
     abilities: '它能用哪些能力', spawn: '它会不会派别人干活', stop: '它什么时候会停下',
     links: '它跟谁连着', tools: '自带的工具', mcp: '外挂的能力（MCP）',
-    skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设', checklist: '要你核实的',
+    skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设',
+    checklist: '这几处得你自己去核实',
     start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
     concurrent: '同时干', items: '件', fan: '会派别人', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
     foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
-    edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去', confirmedTime: '查证时间',
+    edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去',
+    confirmedTime: '查证时间',
     screening: '收下之前先查什么', concurrencyControl: '同时来了好几份怎么办',
-    payload: '这条线上传的东西', producedAt: '什么时候造出来的', deliveredAt: '什么时候交出去的',
+    payload: '这条线上传的东西', producedAt: '什么时候造出来的',
+    deliveredAt: '什么时候交出去的',
     limits: {
       steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
     },
@@ -129,7 +132,12 @@ function overview(data, pageLayout) {
   const ending = `<div class="card card-compact"><div class="card-header"><div class="card-title">` +
     `${esc(WORDS.labels.end)}</div></div>` +
     `<div class="card-content"><ul class="list">${exits}</ul></div></div></div></section>`;
-  return `${head}${diagram}${ending}`;
+  const checklist = (data.checklist || []).map((item) =>
+    `<li class="list-item"><span class="text-xs grow">${value(item.text)}</span></li>`).join('');
+  const checklistCard = `<div class="card card-compact"><div class="card-header"><div class="card-title">` +
+    `${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</div></div>` +
+    `<div class="card-content"><ul class="list">${checklist}</ul></div></div>`;
+  return `${head}${diagram}${checklistCard}${ending}`;
 }
 
 function kv(label, content) {
@@ -290,7 +298,8 @@ function folded(data) {
     `<span class="topo-crumb-now">${esc(WORDS.labels.folded)}</span></span><span class="grow"></span>` +
     `<button class="btn btn-outline btn-sm" data-expand>${esc(WORDS.labels.expand)}</button></div>` +
     `<div class="screen">${stage}` +
-    `<p class="text-xs muted">收起来只是不显示堆里面那 ${innerCount} 条线，一个方块一条线都没少</p></div></section>`;
+    `<p class="text-xs muted">收起来只是不显示堆里面那 ${innerCount} 条线，` +
+    `一个方块一条线都没少</p></div></section>`;
 }
 
 /** 将拓扑数据、布局和富化结果渲染成单文件离线 HTML。 */
