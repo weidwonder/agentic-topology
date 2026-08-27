@@ -83,9 +83,13 @@ test('唯一写点断言本身抓得住（反向自检）', () => {
   assert.ok(bound.some((n) => WRITE_NAMES.includes(n)), '导入形态没抓住');
 });
 
+// tests/fixtures/benchmarks/ 是对真实项目的分析产物，不是本技能的交付物。
+// 项目二的分析对象恰好就是一个 skills 目录，产物里出现别的 skill 名字是在
+// 如实记录目标项目的事实——不写才是缺陷。所以这一目录 MUST 排除在本断言之外。
 test('交付物不引用任何其他 skill（AC-035）', () => {
   const files = walk('.', (p) =>
     !/^\.\/(docs|engineering-context|node_modules|tests\/tmp)/.test(p) &&
+    !/^(\.\/)?tests\/fixtures\/benchmarks/.test(p) &&
     !/^tests\/tmp\//.test(p) &&
     !p.includes('/.git/') && !p.includes('/.claude/') && !p.includes('/.agents/') &&
     !p.includes('/.worktrees/') && p !== './CLAUDE.md' && p !== './AGENTS.md' &&
