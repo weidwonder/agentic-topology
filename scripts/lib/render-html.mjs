@@ -95,7 +95,7 @@ function nodeHtml(node, box) {
     (marks.length ? `<div class="topo-marks">${marks.join('')}</div>` : '') + '</div>';
 }
 
-function overview(data, pageLayout) {
+function overview(data, pageLayout, staleness) {
   const frames = [...pageLayout.groups.values()].map((group) =>
     `<div class="topo-frame" style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">` +
     `<span class="topo-frame-label">${value(group.name)}</span></div>`).join('');
@@ -117,6 +117,8 @@ function overview(data, pageLayout) {
     `<span class="text-xs grow">${value(exit.condition)}</span></li>`).join('');
   const incompleteNotice = data.analysis_complete === false
     ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : '';
+  const staleNotice = staleness?.stale
+    ? `<div class="alert alert-warning">这张图可能已经过期：${value(staleness.reason)}</div>` : '';
   const emptyNotice = (data.nodes || []).length === 0
     ? '<div class="alert"><strong>还没有可画的东西</strong>' +
       '<span class="text-sm muted">打开写好的描述，填入方块和连线后再出图。</span></div>' : '';
@@ -132,7 +134,7 @@ function overview(data, pageLayout) {
     `<span class="topo-flag is-sure">${(data.edges || []).length} 条连线</span>` +
     `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</span>` +
     `<span class="text-xs muted">查证时间 ${value(data.generated_at)}</span></div>` +
-    incompleteNotice + emptyNotice +
+    incompleteNotice + staleNotice + emptyNotice +
     filterControls(data) +
     `<div class="topo-legend"><span class="topo-legend-item"><span class="topo-swatch"></span>` +
     `${esc(WORDS.category.normal)}</span>` +
@@ -359,7 +361,7 @@ export function renderHtml({ data, layout: pageLayout, enriched = {} }) {
   const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
   const details = (data.nodes || []).map((node) => detail(data, node, enriched)).join('');
   const edgeDetails = (data.edges || []).map((edge) => edgeDetail(edge)).join('');
-  const body = `<div class="topo-views">${overview(payload, pageLayout)}` +
+  const body = `<div class="topo-views">${overview(payload, pageLayout, enriched.staleness)}` +
     `<section id="view-node-detail" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
     ` data-back>${esc(WORDS.labels.back)}</button><span class="topo-crumb">` +
     `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">${esc(WORDS.labels.detail)}</span></span></div>` +
