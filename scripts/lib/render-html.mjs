@@ -30,7 +30,13 @@ const WORDS = {
     abilities: '它能用哪些能力', spawn: '它会不会派别人干活', stop: '它什么时候会停下',
     links: '它跟谁连着', tools: '自带的工具', mcp: '外挂的能力（MCP）',
     skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设', checklist: '要你核实的',
-    start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开',
+    start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
+    concurrent: '同时干', items: '件', fan: '会派别人', in: '进', out: '出',
+    line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
+    foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
+    limits: {
+      steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
+    },
   },
 };
 
@@ -42,7 +48,10 @@ export function esc(value) {
 }
 
 function value(item, fallback = WORDS.labels.notSet) {
-  return item === undefined || item === null || item === '' ? esc(fallback) : esc(item);
+  if (item === undefined || item === null || item === '' || item === 'not_set') return esc(
+    item === 'not_set' ? WORDS.labels.notSet : fallback,
+  );
+  return esc(item);
 }
 
 function optional(item) {
@@ -59,10 +68,13 @@ function nodeHtml(node, box) {
   const classes = ['topo-node', node.kind === 'agent' ? 'is-agent' : '', confidence !== 'certain' ? 'is-guess' : ''];
   const marks = [];
   if (Number(node.concurrency?.default) > 1) {
-    marks.push(`<span class="topo-mark is-conc">同时干 ${value(node.concurrency.default)} 件</span>`);
+    marks.push(`<span class="topo-mark is-conc">${WORDS.labels.concurrent} ` +
+      `${value(node.concurrency.default)} ${WORDS.labels.items}</span>`);
   }
-  if (node.spawns_subagents === true) marks.push('<span class="topo-mark is-fan">会派别人</span>');
-  const labels = { agent: 'AI', program: '程序', decision: '岔路口' };
+  if (node.spawns_subagents === true) {
+    marks.push(`<span class="topo-mark is-fan">${WORDS.labels.fan}</span>`);
+  }
+  const labels = WORDS.kind;
   const top = `<div class="topo-node-top"><span class="topo-node-kind">${value(labels[node.kind])}</span>` +
     `<span class="topo-node-id">${value(node.id)}</span>${flag(confidence)}</div>`;
   const head = `<div class="${classes.filter(Boolean).join(' ')}" data-node-id="${value(node.id)}"` +
@@ -125,10 +137,12 @@ function promptSection(node, prompt) {
     body = `<div class="topo-src"><div class="topo-line"><span>1</span>` +
       `<span class="mono">${value(source.inline)}</span></div></div>`;
   } else if (source.file) {
-    body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(source.file)} 第 ` +
-      `${value(source.from)}–${value(source.to)} 行</span></div></div>`;
+    body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(source.file)} ` +
+      `${WORDS.labels.line} ${value(source.from)}–${value(source.to)} 行</span></div></div>`;
   }
-  const mark = source.file ? `第 ${value(source.from)}–${value(source.to)} 行` : '';
+  const mark = source.file
+    ? `${WORDS.labels.line} ${value(source.from)}–${value(source.to)} 行`
+    : '';
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.prompt)}` +
     `<span class="topo-acc-mark">${mark}</span></summary><div class="topo-acc-body">${body}</div></details>`;
 }
@@ -151,26 +165,29 @@ function abilities(node) {
 
 function stopSection(node) {
   if (node.kind !== 'agent') return '';
+  const conditions = (node.stop?.conditions || []).map((condition) =>
+    `<li class="list-item"><span class="text-sm">${value(condition)}</span></li>`).join('');
   const rows = Object.entries(node.stop?.limits || {})
-    .map(([key, item]) => kv(key, value(item))).join('');
+    .map(([key, item]) => kv(WORDS.labels.limits[key] || key, value(item))).join('');
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.stop)}</summary>` +
-    `<div class="topo-acc-body"><dl class="kv">${rows}</dl></div></details>`;
+    `<div class="topo-acc-body"><ul class="list">${conditions}</ul><dl class="kv">${rows}</dl></div></details>`;
 }
 
 function linksSection(node, data) {
   const incoming = (data.edges || []).filter((edge) => edge.to === node.id);
   const outgoing = (data.edges || []).filter((edge) => edge.from === node.id);
   const item = (edge, direction) => {
-    const id = direction === '进' ? edge.from : edge.to;
+    const id = direction === WORDS.labels.in ? edge.from : edge.to;
     const other = data.nodes.find((candidate) => candidate.id === id);
     const payloads = (edge.payloads || []).map((payload) => value(payload.content)).join('、');
-    return `<li class="list-item"><span class="badge badge-outline">${direction}</span>` +
+    return `<li class="list-item"><span class="badge badge-outline">${esc(direction)}</span>` +
       `<span class="text-xs grow">${other ? value(other.name) : value(id)}：${payloads}</span></li>`;
   };
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.links)}` +
-    `<span class="topo-acc-mark">${incoming.length} 条进来 · ${outgoing.length} 条出去</span></summary>` +
-    `<div class="topo-acc-body"><ul class="list">${incoming.map((edge) => item(edge, '进')).join('')}` +
-    `${outgoing.map((edge) => item(edge, '出')).join('')}</ul></div></details>`;
+    `<span class="topo-acc-mark">${incoming.length} ${WORDS.labels.inCount} · ` +
+    `${outgoing.length} ${WORDS.labels.outCount}</span></summary>` +
+    `<div class="topo-acc-body"><ul class="list">${incoming.map((edge) => item(edge, WORDS.labels.in)).join('')}` +
+    `${outgoing.map((edge) => item(edge, WORDS.labels.out)).join('')}</ul></div></details>`;
 }
 
 function detail(data, node, enriched) {
@@ -184,7 +201,7 @@ function detail(data, node, enriched) {
   rows.push(kv(WORDS.labels.group, optional(group?.name)));
   rows.push(kv(WORDS.labels.concurrency, value(node.concurrency?.default)));
   const source = `<span class="mono text-xs">${value(node.source?.refs?.join(' · '))}` +
-    ` · ${value(node.source?.confirmed_at)} 查证</span>`;
+    ` · ${value(node.source?.confirmed_at)} ${WORDS.labels.confirmed}</span>`;
   rows.push(kv(WORDS.labels.source, source));
   const subcards = node.spawns_subagents === true && Array.isArray(node.subagents)
     ? node.subagents.map((sub) => `<div class="topo-sub"><button class="btn btn-ghost btn-sm"` +
@@ -193,16 +210,16 @@ function detail(data, node, enriched) {
     : '';
   const spawn = node.kind === 'agent' ? `<details class="topo-acc-item"><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.spawn)}<span class="topo-acc-mark">` +
-    `${node.spawns_subagents ? '会派' : '不会派'}</span></summary>` +
+    `${node.spawns_subagents ? WORDS.labels.fan : `不${WORDS.labels.fan.slice(1)}`}</span></summary>` +
     `<div class="topo-acc-body"><div class="stack-sm"><div class="text-sm">` +
-    `${node.spawns_subagents ? '会派别人干活' : '不会派别人干活'}</div>` +
+    `${node.spawns_subagents ? `${WORDS.labels.fan}干活` : `不会${WORDS.labels.fan.slice(1)}干活`}</div>` +
     `${subcards || `<span class="text-xs muted">${esc(WORDS.labels.none)}</span>`}</div></div></details>` : '';
   const sections = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.what)}<span class="topo-acc-mark">${flag(node.confidence)}</span></summary>` +
     `<div class="topo-acc-body"><dl class="kv">${rows.join('')}</dl></div></details>` +
     `${promptSection(node, enriched?.prompts?.get(node.id))}` +
     `${abilities(node)}${spawn}${stopSection(node)}${linksSection(node, data)}`;
-  const labels = { agent: 'AI', program: '程序', decision: '岔路口' };
+  const labels = WORDS.kind;
   return `<section id="detail-${value(node.id)}" class="topo-detail" data-detail-for="${value(node.id)}">` +
     `<div class="topo-chain"><div class="topo-chain-cell is-focus"><div class="topo-node-top">` +
     `<span class="topo-node-kind">${value(labels[node.kind])}</span>` +
@@ -228,8 +245,7 @@ function folded(data) {
     `<span class="topo-crumb-now">${esc(WORDS.labels.folded)}</span></span><span class="grow"></span>` +
     `<button class="btn btn-outline btn-sm">${esc(WORDS.labels.expand)}</button></div>` +
     `<div class="screen"><div class="stack">${cards}</div>` +
-    `<p class="text-xs muted">收起来只是不显示堆里面的线，一个方块一条线` +
-    `都没少</p></div></section>`;
+    `<p class="text-xs muted">${esc(WORDS.labels.foldedHint)}</p></div></section>`;
 }
 
 /** 将拓扑数据、布局和富化结果渲染成单文件离线 HTML。 */
@@ -244,7 +260,7 @@ export function renderHtml({ data, layout: pageLayout, enriched = {} }) {
   const body = `<div class="topo-views">${overview(payload, pageLayout)}` +
     `<section id="view-node-detail" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
     ` data-back>${esc(WORDS.labels.back)}</button><span class="topo-crumb">` +
-    `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">详情</span></span></div>` +
+    `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">${esc(WORDS.labels.detail)}</span></span></div>` +
     `<div class="screen">${details}</div></section>` +
     `${folded(data)}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)

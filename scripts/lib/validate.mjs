@@ -183,6 +183,13 @@ export function validate(data, lines = new Map()) {
       issue('E_ENUM', `nodes[${i}].confidence`, '只有文档来源，不能标查实了');
     }
   });
+  const subagentReturns = new Set();
+  nodes.forEach((node) => {
+    if (!Array.isArray(node?.subagents)) return;
+    node.subagents.forEach((subagent) => {
+      subagentReturns.add(`${subagent.node}\u0000${node.id}`);
+    });
+  });
   const edges = Array.isArray(data.edges) ? data.edges : [];
   const edgeKeys = new Set([
     'from', 'to', 'category', 'trigger', 'carrier', 'carrier_note', 'payloads',
@@ -244,7 +251,13 @@ export function validate(data, lines = new Map()) {
     } else {
       seenPairs.set(pair, index);
     }
-    if (!('screening' in edge)) warnings.push({ path: `${edgePath}.screening`, message: '未填写筛查条件' });
+    const missingScreening = !isString(edge.screening) || edge.screening.length === 0;
+    if (subagentReturns.has(pair) && missingScreening) {
+      issue('E_CONDITIONAL_REQUIRED', `${edgePath}.screening`,
+        '子代理回传必须填写收下之前的筛查条件');
+    } else if (!('screening' in edge)) {
+      warnings.push({ path: `${edgePath}.screening`, message: '未填写筛查条件' });
+    }
     if (edge.field_confidence && isObject(edge.field_confidence)) {
       for (const [key, value] of Object.entries(edge.field_confidence)) {
         const target = key.split('.').reduce((current, part) => current?.[part], edge);
