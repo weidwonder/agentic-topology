@@ -34,6 +34,9 @@ const WORDS = {
     concurrent: '同时干', items: '件', fan: '会派别人', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
     foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
+    edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去', confirmedTime: '查证时间',
+    screening: '收下之前先查什么', concurrencyControl: '同时来了好几份怎么办',
+    payload: '这条线上传的东西', producedAt: '什么时候造出来的', deliveredAt: '什么时候交出去的',
     limits: {
       steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
     },
@@ -92,7 +95,9 @@ function overview(data, pageLayout) {
     const cls = edge.category === 'pass_or_skip' ? 'is-ok' :
       edge.category === 'reject_or_halt' ? 'is-back' : 'is-main';
     const trust = edge.confidence === 'certain' ? '' : ` is-${edge.confidence}`;
+    const edgeId = `${edge.from}->${edge.to}`;
     return `<path class="topo-edge ${cls}${trust}" d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
+      `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}"/>` +
       `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`;
   }).join('');
   const nodes = [...pageLayout.nodes.entries()].map(([id, box]) =>
@@ -228,6 +233,34 @@ function detail(data, node, enriched) {
     `<div class="topo-acc">${sections}</div></section>`;
 }
 
+function edgeDetail(edge) {
+  const edgeKey = `${edge.from}->${edge.to}`;
+  const source = `<span class="mono text-xs">${value(edge.source?.refs?.join(' · '))}` +
+    ` · ${esc(WORDS.labels.confirmedTime)}：${value(edge.source?.confirmed_at)}</span>`;
+  const rows = [
+    kv(WORDS.labels.edgeCategory, value(WORDS.category[edge.category] || edge.category)),
+    kv(WORDS.labels.trigger, value(edge.trigger)),
+    kv(WORDS.labels.carrier, value({
+      file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
+    }[edge.carrier] || edge.carrier)),
+  ];
+  if (edge.screening !== undefined) rows.push(kv(WORDS.labels.screening, value(edge.screening)));
+  rows.push(kv(WORDS.labels.concurrencyControl, value(edge.concurrency_control)));
+  rows.push(kv(WORDS.labels.source, source));
+  const payloads = (edge.payloads || []).map((payload) => `<div class="topo-payload"><dl class="kv">` +
+    `${kv(WORDS.labels.payload, value(payload.content))}` +
+    `${kv(WORDS.labels.producedAt, value(payload.produced_at))}` +
+    `${kv(WORDS.labels.deliveredAt, value(payload.delivered_at))}</dl></div>`).join('');
+  const body = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
+    `${esc(WORDS.labels.payload)}<span class="topo-acc-mark">${(edge.payloads || []).length}</span>` +
+    `</summary><div class="topo-acc-body">${payloads}</div></details>`;
+  return `<section class="topo-detail topo-edge-detail" data-edge-detail="${esc(edge.from)}->${esc(edge.to)}">` +
+    `<div class="topo-edge-detail-title"><span class="mono">${value(edge.from)} → ${value(edge.to)}</span></div>` +
+    `<div class="topo-acc"><details class="topo-acc-item" open><summary class="topo-acc-head">` +
+    `${esc(WORDS.labels.trigger)}</summary><div class="topo-acc-body"><dl class="kv">${rows.join('')}</dl>` +
+    `</div></details>${body}</div></section>`;
+}
+
 function folded(data) {
   const groups = Array.isArray(data.groups) ? data.groups : [];
   const cards = groups.map((group) => {
@@ -257,11 +290,12 @@ export function renderHtml({ data, layout: pageLayout, enriched = {} }) {
   };
   const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
   const details = (data.nodes || []).map((node) => detail(data, node, enriched)).join('');
+  const edgeDetails = (data.edges || []).map((edge) => edgeDetail(edge)).join('');
   const body = `<div class="topo-views">${overview(payload, pageLayout)}` +
     `<section id="view-node-detail" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
     ` data-back>${esc(WORDS.labels.back)}</button><span class="topo-crumb">` +
     `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">${esc(WORDS.labels.detail)}</span></span></div>` +
-    `<div class="screen">${details}</div></section>` +
+    `<div class="screen">${details}${edgeDetails}</div></section>` +
     `${folded(data)}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)
     .replace('<!--SLOT:DATA-->', json).replace('<!--SLOT:BODY-->', body).replace('<!--SLOT:SCRIPT-->', APP);

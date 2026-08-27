@@ -4,6 +4,7 @@
 .topo-frame-label { position: absolute; top: -10px; left: 12px; padding: 0 8px; background: var(--card); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
 .topo-edges { position: absolute; inset: 0; pointer-events: none; }
 .topo-edge { fill: none; stroke-width: 1.6; }
+.topo-edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
 .topo-edge.is-main { stroke: var(--primary); }
 .topo-edge.is-ok { stroke: var(--success); }
 .topo-edge.is-back { stroke: var(--destructive); }
