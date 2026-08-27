@@ -53,13 +53,34 @@ test('零依赖', () => {
   assert.deepEqual(JSON.parse(readFileSync('package.json', 'utf8')).dependencies, {});
 });
 
+// 写文件的四类动作。断言挂在「调用形态」与「从 node:fs 导入」两处，
+// 而不是裸子串——裸子串会把 renamedFrom 这种正常字段名也误伤（spec §7.2 Invariant 1）。
+const WRITE_CALLS = [/\bwriteFile(Sync)?\s*\(/, /\bappendFile(Sync)?\s*\(/,
+  /\bcreateWriteStream\s*\(/, /\brename(Sync)?\s*\(/, /\bmkdir(Sync)?\s*\(/];
+const WRITE_NAMES = ['writeFile', 'writeFileSync', 'appendFile', 'appendFileSync',
+  'createWriteStream', 'rename', 'renameSync', 'mkdir', 'mkdirSync'];
+
 test('唯一写点（AC-036）', () => {
   const files = walk('scripts', (p) => !p.endsWith('write-output.mjs'));
   for (const f of files.filter((p) => p.endsWith('.mjs'))) {
     const t = readFileSync(f, 'utf8');
-    for (const bad of ['writeFile', 'appendFile', 'createWriteStream', 'renameSync', 'mkdirSync', 'mkdir('])
-      assert.ok(!t.includes(bad), `${f} 出现了写文件调用 ${bad}`);
+    for (const bad of WRITE_CALLS)
+      assert.ok(!bad.test(t), `${f} 出现了写文件调用 ${bad}`);
+    for (const line of t.split('\n')) {
+      if (!/from\s+'node:fs(\/promises)?'/.test(line)) continue;
+      const bound = (line.match(/\{([^}]*)\}/) || [, ''])[1].split(',').map((n) => n.trim());
+      for (const name of bound)
+        assert.ok(!WRITE_NAMES.includes(name), `${f} 从 node:fs 导入了写文件函数 ${name}`);
+    }
   }
+});
+
+test('唯一写点断言本身抓得住（反向自检）', () => {
+  const sneaky = "import { rename } from 'node:fs/promises';\nawait rename(a, b);\n";
+  assert.ok(WRITE_CALLS.some((re) => re.test(sneaky)), '调用形态没抓住');
+  const line = sneaky.split('\n')[0];
+  const bound = (line.match(/\{([^}]*)\}/) || [, ''])[1].split(',').map((n) => n.trim());
+  assert.ok(bound.some((n) => WRITE_NAMES.includes(n)), '导入形态没抓住');
 });
 
 test('交付物不引用任何其他 skill（AC-035）', () => {

@@ -3,8 +3,7 @@ import path from 'node:path';
 
 /** 解析不会覆盖既有输出文件的目标路径。 */
 export function resolveTarget(targetPath, force = false) {
-  const resultKey = 're' + 'named' + 'From';
-  if (force || !existsSync(targetPath)) return { path: targetPath, [resultKey]: null };
+  if (force || !existsSync(targetPath)) return { path: targetPath, renamedFrom: null };
   const parsed = path.parse(targetPath);
   const topologySuffix = '.topology';
   const hasTopologySuffix = parsed.name.endsWith(topologySuffix);
@@ -17,5 +16,5 @@ export function resolveTarget(targetPath, force = false) {
     index += 1;
     candidate = path.join(parsed.dir, `${baseName}.${index}${hasTopologySuffix ? topologySuffix : ''}${parsed.ext}`);
   }
-  return { path: candidate, [resultKey]: targetPath };
+  return { path: candidate, renamedFrom: targetPath };
 }
