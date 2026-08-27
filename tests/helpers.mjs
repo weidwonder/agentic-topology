@@ -87,7 +87,7 @@ export function bodyText(html) {
 /** 递归列出目录下的文件，filter 返回 true 才收。 */
 export function walk(dir, filter = () => true, acc = []) {
   for (const name of readdirSync(dir)) {
-    const p = path.join(dir, name);
+    const p = dir === '.' ? `./${name}` : path.join(dir, name);
     if (statSync(p).isDirectory()) { if (filter(p)) walk(p, filter, acc); }
     else if (filter(p)) acc.push(p);
   }

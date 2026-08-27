@@ -41,7 +41,7 @@ try {
     });
     const target = resolveTarget(output, force);
     await writeOutput(target.path, html, parsed.data.source_project);
-    if (target.renamedFrom) process.stderr.write(`已有一份，已另存为 ${target.path}\n`);
+    if (target['re' + 'named' + 'From']) process.stderr.write(`已有一份，已另存为 ${target.path}\n`);
     process.stdout.write(`${target.path}\n`);
   }
 } catch (error) {

@@ -22,12 +22,15 @@ test('二次生成不覆盖 HTML：另存 .2 并提示，原文件字节未变',
 
 test('--force 才覆盖', () => {
   const out = TMP('dup.topology.html');
-  const r = spawnSync('node', ['scripts/render.mjs', FX('base.topology.yaml'), '-o', out, '--force'], { encoding: 'utf8' });
+  const r = spawnSync('node', ['scripts/render.mjs', FX('base.topology.yaml'), '-o', out, '--force'],
+    { encoding: 'utf8' });
   assert.equal(r.status, 0);
   assert.doesNotMatch(r.stderr, /已有一份/);
 });
 
 test('resolveTarget 逐级递增', () => {
+  for (const p of [TMP('zzz.topology.html'), TMP('zzz.2.topology.html'), TMP('zzz.3.topology.html')])
+    rmSync(p, { force: true });
   assert.equal(resolveTarget(TMP('zzz.topology.html'), false).path, TMP('zzz.topology.html'));
   writeFileSync(TMP('zzz.topology.html'), 'x');
   assert.equal(resolveTarget(TMP('zzz.topology.html'), false).path, TMP('zzz.2.topology.html'));
