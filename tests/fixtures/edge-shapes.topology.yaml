@@ -1,0 +1,260 @@
+schema_version: 1
+source_project: "tests/fixtures/fake-project"
+generated_at: "2026-08-26"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "使用者点「开始」，经入口校验后进入"
+  exits:
+    - name: "成功"
+      kind: normal
+      condition: "汇总通过，结果落盘"
+      source:
+        refs:
+          - "src/workflow.ts:441-447"
+        confirmed_at: "2026-08-26"
+    - name: "校验连续失败"
+      kind: abnormal
+      condition: "计划连续 2 次被硬校验判非法"
+      source:
+        refs:
+          - "src/workflow.ts:586"
+        confirmed_at: "2026-08-26"
+
+groups:
+  - id: g1
+    name: "第一堆 · 定计划"
+    order: 1
+  - id: g2
+    name: "第二堆 · 分头干活"
+    order: 2
+  - id: g3
+    name: "第三堆 · 收尾"
+    order: 3
+
+nodes:
+  - id: N1
+    name: "整理材料清单"
+    kind: program
+    responsibility: "列出全部材料，给每份算个指纹，用来判断有没有变过"
+    inputs: "三个材料目录"
+    outputs: "材料清册与两个指纹"
+    purpose: "为后面判断能不能复用上次的结果提供一个确定的基准"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/material-inventory.ts:102-137"
+      confirmed_at: "2026-08-26"
+  - id: N2
+    name: "看能不能复用上次的计划"
+    kind: decision
+    responsibility: "材料和要求都没变，就直接接着用，不重新定"
+    inputs: "材料清册与两个指纹"
+    outputs: "复用命中或未命中"
+    purpose: "按「四个指纹是否全等」分岔：全等就跳过定计划，不等就往下走"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/ledger-store.ts:45-67"
+      confirmed_at: "2026-08-26"
+  - id: N3
+    name: "规划师"
+    kind: agent
+    responsibility: "把要求落到具体的检查项上，并给每项选好用哪些材料"
+    inputs: "材料分组视图、要求全文、上一轮被打回的原因"
+    outputs: "一份草稿计划"
+    group: g1
+    concurrency:
+      default: 1
+    system_prompt:
+      file: "prompts/planner.v2.md"
+      from: 1
+      to: 6
+    tools:
+      - read
+      - write
+      - edit
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "写完草稿计划并结束会话"
+        - "整段重试上限 2 次"
+      limits:
+        steps: "会话轮次上限 80"
+        time: not_set
+        cost: not_set
+        consecutive_failures: "整段重试 2 次"
+    spawns_subagents: false
+    confidence: certain
+    field_confidence:
+      stop.limits.steps: unread
+    source:
+      refs:
+        - "src/engine-host.ts:1169-1181"
+      confirmed_at: "2026-08-26"
+  - id: N4
+    name: "调度分发"
+    kind: program
+    responsibility: "把计划拆成一件件活儿，分头派出去"
+    inputs: "定稿的计划"
+    outputs: "一件件工作项"
+    purpose: "控制同时干几件、断点续跑、以及卡住不动时把那一件掐掉"
+    group: g2
+    concurrency:
+      default: 3
+      max: 4
+      note: "网关天花板 4"
+    confidence: certain
+    source:
+      refs:
+        - "src/dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"
+  - id: N5
+    kind: program
+    group: g3
+    name: "汇总出报告"
+    responsibility: "该查的和查完的对一遍账，去重编号后生成报告"
+    inputs: "全部结论"
+    outputs: "一份报告"
+    purpose: "把分散的结论合成一份能看的东西"
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/reconcile.ts:45-140"
+      confirmed_at: "2026-08-26"
+
+edges:
+  - from: N1
+    to: N2
+    category: normal
+    trigger: "每轮必经"
+    carrier: bundle
+    payloads:
+      - content: "材料清册"
+        produced_at: "整理材料清单时"
+        delivered_at: "同一次调用里直接交出"
+      - content: "用来比对的四个指纹"
+        produced_at: "整理材料清单时"
+        delivered_at: "同一次调用里直接交出"
+    concurrency_control: "不会发生（单线顺序执行）"
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:210-224"
+      confirmed_at: "2026-08-26"
+  - from: N2
+    to: N3
+    category: normal
+    trigger: "复用未命中"
+    carrier: file
+    payloads:
+      - content: "材料分组视图与要求全文"
+        produced_at: "复用未命中后现拼"
+        delivered_at: "开规划会话的首轮消息里"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "src/prompts.ts:80-110"
+      confirmed_at: "2026-08-26"
+  - from: N2
+    to: N4
+    category: pass_or_skip
+    trigger: "四个指纹全等，直接沿用上次的计划"
+    carrier: bundle
+    payloads:
+      - content: "沿用的计划"
+        produced_at: "上一次运行定稿计划时"
+        delivered_at: "复用命中的那一刻"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "src/ledger-store.ts:45-67"
+      confirmed_at: "2026-08-26"
+  - from: N3
+    to: N4
+    category: normal
+    trigger: "计划通过硬校验"
+    carrier: file
+    payloads:
+      - content: "定稿的计划"
+        produced_at: "规划会话结束时"
+        delivered_at: "校验通过并落盘之后"
+    concurrency_control: "排队（校验串行）"
+    confidence: certain
+    source:
+      refs:
+        - "src/ledger.ts:72-122"
+      confirmed_at: "2026-08-26"
+  - from: N4
+    to: N5
+    category: normal
+    trigger: "全部工作项排干"
+    carrier: bundle
+    payloads:
+      - content: "全部结论"
+        produced_at: "调度分发完成时"
+        delivered_at: "汇总开始时"
+    concurrency_control: "合并"
+    confidence: certain
+    source:
+      refs:
+        - "src/dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"
+  - from: N1
+    to: N3
+    category: pass_or_skip
+    trigger: "跳过中间层"
+    carrier: bundle
+    payloads:
+      - content: "直接结果"
+        produced_at: "整理材料清单时"
+        delivered_at: "规划开始时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:210-224"
+      confirmed_at: "2026-08-26"
+  - from: N3
+    to: N1
+    category: reject_or_halt
+    trigger: "计划被打回"
+    carrier: bundle
+    payloads:
+      - content: "打回原因"
+        produced_at: "规划校验时"
+        delivered_at: "重新整理时"
+    concurrency_control: "不会发生"
+    confidence: inferred
+    source:
+      refs:
+        - "src/workflow.ts:586"
+      confirmed_at: "2026-08-26"
+  - from: N5
+    to: N1
+    category: reject_or_halt
+    trigger: "发现需要重新整理"
+    carrier: bundle
+    payloads:
+      - content: "重新整理请求"
+        produced_at: "汇总检查时"
+        delivered_at: "重新规划前"
+    concurrency_control: "合并"
+    confidence: certain
+    source:
+      refs:
+        - "src/reconcile.ts:45-140"
+      confirmed_at: "2026-08-26"
