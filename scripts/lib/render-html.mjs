@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { layoutFolded } from './layout.mjs';
+import { foldSummary } from './interactions.mjs';
 
 const ASSET_DIR = fileURLToPath(new URL('../../assets/page-shell/', import.meta.url));
 const SHELL = readFileSync(`${ASSET_DIR}/shell.html`, 'utf8');
@@ -262,23 +264,33 @@ function edgeDetail(edge) {
 }
 
 function folded(data) {
-  const groups = Array.isArray(data.groups) ? data.groups : [];
-  const cards = groups.map((group) => {
-    const nodes = (data.nodes || []).filter((node) => node.group === group.id);
-    const names = nodes.map((node) => value(node.name)).join(' → ');
-    const count = (data.edges || []).filter((edge) => nodes.some((node) => node.id === edge.from) &&
-      nodes.some((node) => node.id === edge.to)).length;
-    return `<div class="topo-fold"><div class="topo-fold-name">${value(group.name)}</div>` +
-      `<div class="topo-fold-count">${nodes.length} 个方块 · 里面 ${count} 条线</div>` +
-      `<div class="text-xs muted">${names}</div></div>`;
+  const summary = foldSummary(data);
+  const foldedLayout = layoutFolded(data);
+  const cards = [...foldedLayout.cards.values()].map((card) => {
+    const badges = [
+      card.agents ? `${card.agents} 个 AI` : '',
+      card.programs ? `${card.programs} 个程序` : '',
+      card.decisions ? `${card.decisions} 个岔路口` : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="topo-fold" style="left:${card.x}px;top:${card.y}px;width:${card.w}px;height:${card.h}px">` +
+      `<div class="topo-fold-name">${value(card.name)}</div>` +
+      `<div class="topo-fold-count">${card.nodeCount} 个方块 · 里面 ${card.innerEdgeCount} 条线</div>` +
+      `<div class="text-xs muted">${value(card.chain)}</div>` +
+      `<div class="text-xs muted">${value(badges)}</div></div>`;
   }).join('');
+  const lines = foldedLayout.edges.map((edge) => `<path class="topo-edge is-main" d="${esc(edge.d)}"/>` +
+    `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`).join('');
+  const innerCount = summary.cards.reduce((sum, card) => sum + card.innerEdgeKeys.length, 0);
+  const stage = `<div class="topo-wrap"><div class="topo-stage" style="width:${foldedLayout.stage.w}px;` +
+    `height:${foldedLayout.stage.h}px"><svg class="topo-edges" viewBox="0 0 ${foldedLayout.stage.w} ` +
+    `${foldedLayout.stage.h}" aria-hidden="true">${lines}</svg>${cards}</div></div>`;
   return `<section id="view-folded" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
     ` data-back>${esc(WORDS.labels.back)}</button>` +
     `<span class="topo-crumb">${esc(WORDS.labels.overview)} · ` +
     `<span class="topo-crumb-now">${esc(WORDS.labels.folded)}</span></span><span class="grow"></span>` +
-    `<button class="btn btn-outline btn-sm">${esc(WORDS.labels.expand)}</button></div>` +
-    `<div class="screen"><div class="stack">${cards}</div>` +
-    `<p class="text-xs muted">${esc(WORDS.labels.foldedHint)}</p></div></section>`;
+    `<button class="btn btn-outline btn-sm" data-expand>${esc(WORDS.labels.expand)}</button></div>` +
+    `<div class="screen">${stage}` +
+    `<p class="text-xs muted">收起来只是不显示堆里面那 ${innerCount} 条线，一个方块一条线都没少</p></div></section>`;
 }
 
 /** 将拓扑数据、布局和富化结果渲染成单文件离线 HTML。 */

@@ -1,4 +1,5 @@
 import { measureLabel } from './measure.mjs';
+import { foldSummary } from './interactions.mjs';
 
 const M = {
   NODE_W: 184,
@@ -376,7 +377,70 @@ export function layout(data) {
   };
 }
 
-/** 计算折叠布局占位结果。 */
-export function layoutFolded() {
-  return { stage: { w: 0, h: 0 }, cards: new Map(), edges: [], warnings: [] };
+/** 计算折叠卡片与堆间连线的确定性布局。 */
+export function layoutFolded(data) {
+  const summary = foldSummary(data);
+  const cardWidth = 232;
+  const cardHeight = 132;
+  const gaps = summary.cards.slice(1).map(() => M.COL_GAP);
+  const cardIndex = new Map(summary.cards.map((card, index) => [card.id, index]));
+  const edgeLabels = summary.interGroupEdges.map((edge) => {
+    const label = `带 ${edge.payloadCount} 样东西`;
+    return { edge, label, size: measureLabel(label) };
+  });
+  for (const item of edgeLabels) {
+    const from = cardIndex.get(item.edge.from);
+    const to = cardIndex.get(item.edge.to);
+    if (from === undefined || to === undefined) continue;
+    const low = Math.min(from, to);
+    const high = Math.max(from, to);
+    for (let index = low; index < high; index += 1)
+      gaps[index] = Math.max(gaps[index], item.size.w + 24);
+  }
+  const cards = new Map();
+  let x = M.STAGE_PAD;
+  for (const card of summary.cards) {
+    cards.set(card.id, {
+      ...card,
+      x,
+      y: M.STAGE_PAD,
+      w: cardWidth,
+      h: cardHeight,
+      name: card.name,
+      nodeCount: card.nodeIds.length,
+      innerEdgeCount: card.innerEdgeKeys.length,
+      order: cards.size,
+    });
+    const index = cards.size - 1;
+    x += cardWidth + (gaps[index] || 0);
+  }
+  const edges = edgeLabels.map(({ edge, label, size }) => {
+    const from = cards.get(edge.from);
+    const to = cards.get(edge.to);
+    const start = { x: from.x + from.w, y: from.y + from.h / 2 };
+    const end = { x: to.x, y: to.y + to.h / 2 };
+    const labelX = (start.x + end.x) / 2;
+    const labelY = start.y - 12;
+    return {
+      from: edge.from,
+      to: edge.to,
+      d: `M${round(start.x)},${round(start.y)} L${round(end.x)},${round(end.y)}`,
+      label,
+      labelX: round(labelX),
+      labelY: round(labelY),
+      labelW: size.w,
+      labelH: size.h,
+      category: edge.category,
+      confidence: 'certain',
+      overlapUnresolved: false,
+    };
+  });
+  const maxX = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.x + card.w));
+  const maxY = Math.max(M.STAGE_PAD, ...[...cards.values()].map((card) => card.y + card.h));
+  return {
+    stage: { w: maxX + M.STAGE_PAD, h: maxY + M.STAGE_PAD },
+    cards,
+    edges,
+    warnings: [],
+  };
 }
