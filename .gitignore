@@ -7,3 +7,6 @@
 /.agents/skills/ai-dev-system.version
 /.codegraph/
 # ai-dev-system:gitignore:end
+
+# ai-dev-workflow worktrees
+/.worktrees/
