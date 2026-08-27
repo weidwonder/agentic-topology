@@ -1,0 +1,1299 @@
+schema_version: 1
+source_project: "~/projects/skills/agentic-topology"
+generated_at: "2026-08-27"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: mixed
+  entry: "使用者调用 ai-prd 提出新需求，或调用 ai-dev-workflow 交付已有 PRD；入口先读取项目配置并选择对应流程"
+  exits:
+    - name: "PRD 正式落盘"
+      kind: normal
+      condition: "四批提问、组稿、质量清单、用户过稿、复核和落盘确认全部通过后写入 docs/"
+      source:
+        refs:
+          - ".claude/skills/ai-prd/references/00-prd生成流程.md:224-232"
+        confirmed_at: "2026-08-27"
+    - name: "代码测试通过并合并"
+      kind: normal
+      condition: "代码评审 P0/P1 清零、测试全绿且完成门通过后按 merge-gate 合并主分支"
+      source:
+        refs:
+          - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:149-161"
+          - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:34-45"
+        confirmed_at: "2026-08-27"
+    - name: "用户确认缺失而暂停"
+      kind: cancelled
+      condition: "用户未确认过稿或落盘确认，流程停在对应门，不把沉默当作同意"
+      source:
+        refs:
+          - ".claude/skills/ai-prd/references/00-prd生成流程.md:224-227"
+        confirmed_at: "2026-08-27"
+    - name: "隔离门或验证失败"
+      kind: abnormal
+      condition: "无法建立 worktree，或测试/合并/门禁失败；保留任务分支与 worktree"
+      source:
+        refs:
+          - ".claude/skills/ai-dev-workflow/SKILL.md:6-13"
+          - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:656-660"
+        confirmed_at: "2026-08-27"
+
+groups:
+  - id: g0
+    name: "入口与分流"
+    order: 1
+  - id: g1
+    name: "PRD 批量澄清与组稿"
+    order: 2
+  - id: g2
+    name: "开发设计与实现"
+    order: 3
+  - id: g3
+    name: "评审、测试与合并"
+    order: 4
+
+nodes:
+  - id: A_PRD
+    name: "ai-prd 主会话"
+    kind: agent
+    responsibility: "把需求想法按批次澄清，组装成可评审的 PRD，并在用户确认后落盘"
+    inputs: "用户需求描述、Issue 或已有材料"
+    outputs: "PRD 草稿、用户确认后的 PRD 文件"
+    group: g0
+    concurrency:
+      default: 1
+    system_prompt:
+      file: "../../../.claude/skills/ai-prd/SKILL.md"
+      from: 1
+      to: 145
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "PRD 按模板落盘并提示可交给 ai-dev-workflow"
+        - "用户未回复过稿或落盘确认时停在对应门"
+      limits:
+        steps: "四批提问、组稿、复核、落盘确认"
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: true
+    subagents:
+      - node: A_PRD_REVIEW
+        note: "按自洽轴与冲突轴复核 PRD"
+    confidence: certain
+    field_confidence:
+      stop.limits.steps: inferred
+    source:
+      refs:
+        - ".claude/skills/ai-prd/SKILL.md:6-12"
+        - ".claude/skills/ai-prd/SKILL.md:80-119"
+      confirmed_at: "2026-08-27"
+
+  - id: A_DEV
+    name: "ai-dev-workflow 主会话"
+    kind: agent
+    responsibility: "把已有 PRD 经过分流、设计、编码、测试和评审，交付可合并的代码改动"
+    inputs: "PRD、可选 UI 原型、项目配置和代码事实"
+    outputs: "Overview/spec/plan、代码与测试、评审报告"
+    group: g0
+    concurrency:
+      default: 1
+    system_prompt:
+      file: "../../../.claude/skills/ai-dev-workflow/SKILL.md"
+      from: 1
+      to: 59
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "代码评审 P0/P1 清零且测试与完成门通过"
+        - "worktree、测试或合并门失败时停止并保留现场"
+      limits:
+        steps: "按 Triage 选择 Lean 或完整流程"
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: true
+    subagents:
+      - node: A_CODE_REVIEW
+        note: "执行规范、忠实、残留、文档四轴评审"
+    confidence: certain
+    field_confidence:
+      stop.limits.steps: inferred
+      skills: unread
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:15-29"
+        - ".claude/skills/ai-dev-workflow/SKILL.md:45-55"
+      confirmed_at: "2026-08-27"
+
+  - id: A_PRD_REVIEW
+    name: "PRD 复核子代理"
+    kind: agent
+    responsibility: "独立检查 PRD 自洽性与现有系统冲突，并把结论按出口回传主会话"
+    inputs: "用户定稿后的 PRD、原型结构摘要和取证结果"
+    outputs: "自洽轴/冲突轴报告、需改稿或需用户拍板的条目"
+    group: g1
+    concurrency:
+      default: 2
+      max: 2
+      note: "change-prd/product-prd 两个轴并行；lite-issue-prd 合并为一个子代理"
+    system_prompt:
+      file: "../../../.claude/skills/ai-prd/references/prd复核纪律.md"
+      from: 47
+      to: 101
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "两条轴均返回报告且每条结论走三个出口"
+        - "发现 P0/P1 时返回处理或回流要求"
+      limits:
+        steps: "自洽轴与冲突轴各一轮"
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:16-24"
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:47-101"
+      confirmed_at: "2026-08-27"
+
+  - id: A_CODE_REVIEW
+    name: "代码评审子代理"
+    kind: agent
+    responsibility: "按规范、忠实、残留、文档四条轴检查改动，只报告问题不改文件"
+    inputs: "worktree diff、spec/lean spec、coding plan 和替换清单"
+    outputs: "四轴评审报告与 P0/P1 问题"
+    group: g3
+    concurrency:
+      default: 4
+      max: 4
+      note: "完整流程四个轴并行；Lean 路径由一个子代理分四节报告"
+    system_prompt:
+      file: "../../../.claude/skills/ai-dev-workflow/references/core/代码评审纪律.md"
+      from: 45
+      to: 70
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "四轴报告齐全"
+        - "P0/P1 问题已报告，等待主会话修复后重跑受影响轴"
+      limits:
+        steps: "四轴各一份报告"
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:13-19"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:45-70"
+      confirmed_at: "2026-08-27"
+
+  - id: P_PRD_ROUTE
+    name: "PRD 路由与模板选择"
+    kind: program
+    responsibility: "读取协作面与需求形态，选择轻量 Issue、变更 PRD 或整品 PRD 模板，并判定是否需要 UI 原型"
+    inputs: "项目标记块、用户材料、Triage 四问结果"
+    outputs: "协作面、模板和 UI 触发结论"
+    purpose: "让后续提问和组稿使用与需求体量匹配的模板"
+    group: g0
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/SKILL.md:37-78"
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:18-34"
+      confirmed_at: "2026-08-27"
+
+  - id: P_DEV_ROUTE
+    name: "开发流程路由"
+    kind: program
+    responsibility: "探测代码图谱、读取配置标记并按触发条件加载对应流程分册"
+    inputs: "项目根、CLAUDE.md/AGENTS.md、代码图谱状态"
+    outputs: "分流前资料、协作面、merge-gate 和流程分支"
+    purpose: "在真正动手前确定应走 Lean 还是完整流程及所需规则"
+    group: g0
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:15-55"
+      confirmed_at: "2026-08-27"
+
+  - id: G_WORKTREE
+    name: "工作区隔离门"
+    kind: decision
+    responsibility: "确认已从最新主分支建立独立 worktree，否则中止并保留主工作树"
+    inputs: "路由/初始化对话结果、主工作树状态、worktree-dir"
+    outputs: "可用任务 worktree 或阻塞结果"
+    purpose: "按是否能建立独立 worktree 分岔，保护主工作树不被直接写入"
+    group: g0
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:6-13"
+      confirmed_at: "2026-08-27"
+
+  - id: G_TRIAGE
+    name: "Triage 体量与风险分流"
+    kind: decision
+    responsibility: "逐题判断智能结果、权限场景、跨业务/历史数据和经营规则是否受影响"
+    inputs: "需求描述与项目现状"
+    outputs: "Lean 分支或完整流程分支"
+    purpose: "按四项 Triage 是否有任一为是分岔；四问全否仍需经过默认倾向复核"
+    group: g0
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:41-57"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:47-60"
+      confirmed_at: "2026-08-27"
+
+  - id: P_FACTS
+    name: "代码事实取证"
+    kind: program
+    responsibility: "先查 find-scenes/discover/get-card，卡片未覆盖时定位源码并记录文件与行号"
+    inputs: "业务关键词、项目卡片层、代码图谱或源码"
+    outputs: "带 cite 或文件行号的现状事实、既有系统清单"
+    purpose: "为 PRD 现状和开发设计提供可回溯的权威事实"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:72-119"
+        - ".claude/skills/ai-dev-workflow/references/core/代码事实纪律.md:1-20"
+      confirmed_at: "2026-08-27"
+
+  - id: P_BATCH_A
+    name: "PRD 批 A 立项澄清"
+    kind: program
+    responsibility: "批量澄清一句话结论、背景、可衡量目标和具体非目标"
+    inputs: "用户需求描述与问题清单"
+    outputs: "PRD 前四节草稿和已确认的方向边界"
+    purpose: "先锁定做什么、为什么做、做到什么算完成以及明确不做什么"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:44-64"
+        - ".claude/skills/ai-prd/assets/question-bank.md:5-11"
+      confirmed_at: "2026-08-27"
+
+  - id: P_BATCH_B
+    name: "PRD 批 B 现状与边界"
+    kind: program
+    responsibility: "梳理角色、现有环节、改动范围和明确不动的线上逻辑，并附现状来源"
+    inputs: "批 A 草稿、代码事实取证结果"
+    outputs: "现状/当前逻辑、改动范围、不改业务和样式基线"
+    purpose: "把意图与线上事实分开，建立 brownfield 边界护栏"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:65-136"
+        - ".claude/skills/ai-prd/assets/question-bank.md:13-21"
+      confirmed_at: "2026-08-27"
+
+  - id: P_BATCH_C
+    name: "PRD 批 C 业务细节"
+    kind: program
+    responsibility: "逐角色逐场景确定业务信息、顺序、冲突处理，并按需形成 AI Capability Card 或 UI Prototype Brief"
+    inputs: "批 B 现状与边界"
+    outputs: "详细业务行为、特殊场景处理、AI 能力卡和 UI 原型简报"
+    purpose: "把每个角色与场景的可见行为和边界补齐"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:138-159"
+        - ".claude/skills/ai-prd/assets/question-bank.md:23-29"
+      confirmed_at: "2026-08-27"
+
+  - id: P_BATCH_D
+    name: "PRD 批 D 准出"
+    kind: program
+    responsibility: "定义三分验收、运营指标、风险兜底和 UI 原型验收口径"
+    inputs: "批 C 详细行为与场景"
+    outputs: "可判定的验收标准、指标和风险兜底"
+    purpose: "确保交付结果可以直接勾验并覆盖失败路径"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:161-178"
+        - ".claude/skills/ai-prd/assets/question-bank.md:31-36"
+      confirmed_at: "2026-08-27"
+
+  - id: P_PRD_ASSEMBLE
+    name: "PRD 组稿与原型生成"
+    kind: program
+    responsibility: "按模板拼装四批产出，涉及 UI 时用 init、screen、slot 生成离线 HTML 原型"
+    inputs: "四批 PRD 产出、模板、UI Prototype Brief"
+    outputs: "完整 PRD 草稿、可预览 UI 原型副本"
+    purpose: "把分批产出变成可读、可评审的完整需求包"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:202-205"
+        - ".claude/skills/ai-prd/references/UI原型纪律.md:27-37"
+      confirmed_at: "2026-08-27"
+
+  - id: P_PRD_QUALITY
+    name: "PRD 质量清单"
+    kind: program
+    responsibility: "按模板骨架检查章节完备、来源、可判定验收、风险兜底和占位符"
+    inputs: "完整 PRD 草稿与原型"
+    outputs: "质量清单结果或缺口追问"
+    purpose: "在用户过稿前拦住结构缺项与不可判定内容"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:204-207"
+        - ".claude/skills/ai-prd/references/prd质量清单.md:1-5"
+      confirmed_at: "2026-08-27"
+
+  - id: G_PRD_USER
+    name: "PRD 用户过稿门"
+    kind: decision
+    responsibility: "把 PRD 与预览原型交用户阅读，逐条处理意见并判断是否已经定稿"
+    inputs: "质量清单通过的 PRD、预览原型和用户反馈"
+    outputs: "已定稿 PRD 或等待/返修"
+    purpose: "按用户逐点回复、整体认可或未回复分岔；未回复时停在门内"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:207-214"
+      confirmed_at: "2026-08-27"
+
+  - id: P_PRD_REVIEW_GATE
+    name: "PRD 双轴复核门"
+    kind: program
+    responsibility: "在用户定稿后派自洽轴和冲突轴子代理，逐条处理改稿、回流或待拍板结论"
+    inputs: "用户定稿 PRD、原型摘要和复核 prompt"
+    outputs: "复核报告、修订稿和待用户拍板清单"
+    purpose: "让独立视角检查 PRD 内部一致性与现有系统冲突"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:215-217"
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:16-24"
+      confirmed_at: "2026-08-27"
+
+  - id: G_PRD_PERSIST
+    name: "PRD 落盘确认与写入"
+    kind: decision
+    responsibility: "回述关键取舍、非目标、验收口径和复核改动，确认后把 PRD/原型正式写入 docs/"
+    inputs: "复核报告、待拍板条目、用户定稿稿件"
+    outputs: "正式 PRD/原型文件或等待确认"
+    purpose: "按用户确认状态决定是否允许正式写文件"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:218-232"
+      confirmed_at: "2026-08-27"
+
+  - id: P_LEAN_SPEC
+    name: "Lean Change Spec"
+    kind: program
+    responsibility: "在 Triage 全否且影响面说清时，用一页文档记录范围、决策、兼容和实现约束"
+    inputs: "Lean 分支需求、代码事实和协作面"
+    outputs: "docs/spec 下的 Lean Change Spec"
+    purpose: "为小改动保留决策记录并保持四道门不裁剪"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:1-7"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:706-723"
+      confirmed_at: "2026-08-27"
+
+  - id: P_STEP1
+    name: "Step 1 PRD 粗澄清"
+    kind: program
+    responsibility: "理解 PRD 的目标、边界并列出模糊点、重复点和矛盾点"
+    inputs: "PRD、可选 UI 原型和既有系统清单"
+    outputs: "需求理解、问题清单和既有系统清单"
+    purpose: "把 PRD 交给技术设计前的未知项显式列出来"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:9-39"
+      confirmed_at: "2026-08-27"
+
+  - id: P_OVERVIEW
+    name: "Step 2 Overview"
+    kind: program
+    responsibility: "把 PRD 翻译成顶层模块、边界、Project Map 和开放问题，并完成 A/B 核查"
+    inputs: "澄清后的 PRD、UI 原型和事实清单"
+    outputs: "Overview 顶层架构文档与核查表"
+    purpose: "让工程明确打开哪些仓库以及每个边界的改造范围"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:43-80"
+      confirmed_at: "2026-08-27"
+
+  - id: P_STEP3
+    name: "Step 3 业务细节澄清"
+    kind: program
+    responsibility: "确认 Overview 中未定的业务规则、角色职责、顺序、时效、异常和权限边界"
+    inputs: "Overview 和开放问题"
+    outputs: "修订后的 Overview 与已定业务约束"
+    purpose: "把需要业务判断的约束补齐，技术方案仍由工程侧内部决定"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:116-125"
+      confirmed_at: "2026-08-27"
+
+  - id: P_SPEC
+    name: "Step 4 技术 Spec"
+    kind: program
+    responsibility: "根据 Overview、PRD 和原型编写按边界拆分的工程 spec，并登记替换清单"
+    inputs: "Overview、PRD、UI 原型"
+    outputs: "docs/spec 下的 eng-spec 与替换清单"
+    purpose: "冻结实现边界、接口契约和被取代的旧逻辑"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:129-143"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:164-170"
+      confirmed_at: "2026-08-27"
+
+  - id: G_COMPAT
+    name: "兼容取舍确认门"
+    kind: decision
+    responsibility: "列出受影响的既有可观察行为，按不兼容/兼容一段时间/永久兼容交拍板"
+    inputs: "定稿 spec 或 Lean spec、既有行为清单"
+    outputs: "兼容决策与替换清单结论"
+    purpose: "按拍板结果决定旧行为的保留期限和到期动作"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:115-133"
+      confirmed_at: "2026-08-27"
+
+  - id: P_PLAN
+    name: "Step 6 Coding Plan"
+    kind: program
+    responsibility: "把 spec 拆成带文件、测试、验证命令和提交边界的可执行任务"
+    inputs: "已确认的 spec 与替换清单"
+    outputs: "docs/plan 下的 coding plan"
+    purpose: "让零上下文 coding agent 能按垂直切片执行"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:161-174"
+      confirmed_at: "2026-08-27"
+
+  - id: P_CODE
+    name: "Step 7 执行 Coding"
+    kind: program
+    responsibility: "在任务 worktree 内按 coding plan 实现代码并完成基础验证"
+    inputs: "coding plan、spec 和任务 worktree"
+    outputs: "代码改动、提交和基础验证结果"
+    purpose: "把已确认设计落成可评审的实现"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:178-192"
+      confirmed_at: "2026-08-27"
+
+  - id: G_CODE_REVIEW
+    name: "代码评审门"
+    kind: program
+    responsibility: "派出四轴代码评审子代理，处理 P0/P1，并核销替换清单与卡片"
+    inputs: "代码 diff、spec/plan、替换清单和评审 prompt"
+    outputs: "四轴报告、修复后的代码和门禁结论"
+    purpose: "在测试与合并前把实现偏离、残留和文档问题处理完"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:137-149"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:13-19"
+      confirmed_at: "2026-08-27"
+
+  - id: P_TEST_SPEC
+    name: "Step 8 测试 Spec"
+    kind: program
+    responsibility: "按风险设计 API 调用模型、Fixture、端到端中间产物断言并更新覆盖度台账"
+    inputs: "PRD、原型、Overview、spec 和 coding plan"
+    outputs: "docs/spec 下的测试 spec 与覆盖度记录"
+    purpose: "把需求和实现转成可直接落码的测试方案"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:6-21"
+      confirmed_at: "2026-08-27"
+
+  - id: P_TEST_CODE
+    name: "Step 9 测试代码"
+    kind: program
+    responsibility: "依据测试方案编写测试代码并执行单仓测试与模拟链路测试"
+    inputs: "测试 spec、Fixture 和代码"
+    outputs: "测试代码与单仓/模拟链路结果"
+    purpose: "把测试设计变成可重复执行的验证"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:25-30"
+      confirmed_at: "2026-08-27"
+
+  - id: P_E2E
+    name: "Step 10 链路测试"
+    kind: program
+    responsibility: "执行跨服务端到端链路测试，复核覆盖度台账并确认测试全绿"
+    inputs: "测试代码、真实样本和覆盖度台账"
+    outputs: "端到端验证结果与准出覆盖度结论"
+    purpose: "确认跨服务流水线从入口到出口打通"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:34-45"
+        - ".claude/skills/ai-dev-workflow/references/core/测试资产纪律.md:122-128"
+      confirmed_at: "2026-08-27"
+
+  - id: G_MERGE
+    name: "完成与自动合并门"
+    kind: decision
+    responsibility: "确认文档、代码、测试、评审和 merge-gate 全部满足后合并主分支，否则保留 worktree"
+    inputs: "评审报告、测试结果、文档结算和 merge-gate"
+    outputs: "主分支合并与 worktree 清理，或阻塞现场"
+    purpose: "按完成条件和 direct/pr 分岔决定最终合并动作"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:153-161"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:636-660"
+      confirmed_at: "2026-08-27"
+
+edges:
+  - from: A_PRD
+    to: P_PRD_ROUTE
+    category: normal
+    trigger: "用户调用 ai-prd"
+    carrier: prompt
+    payloads:
+      - content: "需求描述、Issue 或已有材料"
+        produced_at: "用户发起 PRD 请求时"
+        delivered_at: "ai-prd 主会话开始路由时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/SKILL.md:6-12"
+        - ".claude/skills/ai-prd/SKILL.md:37-40"
+      confirmed_at: "2026-08-27"
+
+  - from: A_DEV
+    to: P_DEV_ROUTE
+    category: normal
+    trigger: "用户调用 ai-dev-workflow"
+    carrier: prompt
+    payloads:
+      - content: "已有 PRD 与开发请求"
+        produced_at: "用户发起开发请求时"
+        delivered_at: "ai-dev-workflow 每次调用的路由阶段"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:15-16"
+      confirmed_at: "2026-08-27"
+
+  - from: P_DEV_ROUTE
+    to: G_WORKTREE
+    category: normal
+    trigger: "路由与初始化对话完成，准备首次落盘"
+    carrier: bundle
+    payloads:
+      - content: "协作面、merge-gate、worktree-dir 与代码图谱探测结果"
+        produced_at: "开发流程路由读取项目入口时"
+        delivered_at: "进入工作区隔离门时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:6-11"
+        - ".claude/skills/ai-dev-workflow/SKILL.md:17-29"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_ROUTE
+    to: P_FACTS
+    category: normal
+    trigger: "选定模板后需要核实现状或 UI 样式"
+    carrier: bundle
+    payloads:
+      - content: "模板类型、协作面和现状取证范围"
+        produced_at: "PRD 路由判定完成时"
+        delivered_at: "批 B 开始前取证时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/SKILL.md:55-78"
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:72-104"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_ROUTE
+    to: P_BATCH_A
+    category: normal
+    trigger: "模板路由完成，开始第一批立项提问"
+    carrier: prompt
+    payloads:
+      - content: "批 A 提问清单与模板约束"
+        produced_at: "PRD 路由选定模板时"
+        delivered_at: "批 A 首轮提问时"
+    concurrency_control: "同批问题一次抛出"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/SKILL.md:70-85"
+        - ".claude/skills/ai-prd/assets/question-bank.md:5-11"
+      confirmed_at: "2026-08-27"
+
+  - from: G_WORKTREE
+    to: G_TRIAGE
+    category: normal
+    trigger: "独立 worktree 已建立"
+    carrier: bundle
+    payloads:
+      - content: "任务 worktree 与初始化挂账结论"
+        produced_at: "工作区隔离门通过时"
+        delivered_at: "开始 Step 0 Triage 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/SKILL.md:8-11"
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:41-57"
+      confirmed_at: "2026-08-27"
+
+  - from: G_TRIAGE
+    to: P_LEAN_SPEC
+    category: pass_or_skip
+    trigger: "四项 Triage 全否且默认倾向未升级"
+    carrier: bundle
+    payloads:
+      - content: "Lean 分支判定与影响面复核结果"
+        produced_at: "Triage 四问和默认倾向判定时"
+        delivered_at: "进入 Lean Change Spec 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:45-54"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:47-57"
+      confirmed_at: "2026-08-27"
+
+  - from: G_TRIAGE
+    to: P_STEP1
+    category: normal
+    trigger: "任意 Triage 项为是，或默认倾向判定影响面说不清而升级"
+    carrier: bundle
+    payloads:
+      - content: "完整流程分支判定"
+        produced_at: "Triage 与默认倾向判定时"
+        delivered_at: "进入 Step 1 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:52-79"
+      confirmed_at: "2026-08-27"
+
+  - from: P_BATCH_A
+    to: P_BATCH_B
+    category: normal
+    trigger: "批 A 退出条件全部通过"
+    carrier: bundle
+    payloads:
+      - content: "一句话结论、背景、目标与非目标"
+        produced_at: "批 A 用户回答后起草时"
+        delivered_at: "批 B 开始时"
+    concurrency_control: "同一批问题一次抛出"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:54-64"
+      confirmed_at: "2026-08-27"
+
+  - from: P_FACTS
+    to: P_BATCH_B
+    category: normal
+    trigger: "批 B 需要现状事实或 UI 样式基线"
+    carrier: bundle
+    payloads:
+      - content: "可回溯的现状事实、样式基线与既有系统清单"
+        produced_at: "find-scenes/discover/get-card 或源码取证完成时"
+        delivered_at: "批 B 起草与用户纠偏时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:72-119"
+      confirmed_at: "2026-08-27"
+
+  - from: P_BATCH_B
+    to: P_BATCH_C
+    category: normal
+    trigger: "批 B 现状、改动范围和不改业务退出条件通过"
+    carrier: bundle
+    payloads:
+      - content: "现状、改动范围、不改业务、样式依据"
+        produced_at: "批 B 取证与用户确认后"
+        delivered_at: "批 C 开始时"
+    concurrency_control: "同一批问题一次抛出"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:129-136"
+      confirmed_at: "2026-08-27"
+
+  - from: P_BATCH_C
+    to: P_BATCH_D
+    category: normal
+    trigger: "批 C 每个角色×场景、信息项和特殊场景均有处理"
+    carrier: bundle
+    payloads:
+      - content: "详细业务行为、冲突处理、AI Capability Card 与 UI Prototype Brief"
+        produced_at: "批 C 用户回答后起草时"
+        delivered_at: "批 D 开始时"
+    concurrency_control: "同一批问题一次抛出"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:152-159"
+      confirmed_at: "2026-08-27"
+
+  - from: P_BATCH_D
+    to: P_PRD_ASSEMBLE
+    category: normal
+    trigger: "批 D 三分验收、指标和风险兜底退出条件通过"
+    carrier: bundle
+    payloads:
+      - content: "验收标准、运营度量、风险兜底和原型验收口径"
+        produced_at: "批 D 用户回答后起草时"
+        delivered_at: "组稿开始时"
+    concurrency_control: "同一批问题一次抛出"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:171-178"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_ASSEMBLE
+    to: P_PRD_QUALITY
+    category: normal
+    trigger: "四批产出已拼装，必要时原型 check 无 P0"
+    carrier: bundle
+    payloads:
+      - content: "完整 PRD 草稿与预览原型"
+        produced_at: "组稿按模板拼装和原型生成时"
+        delivered_at: "质量清单自检时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:202-206"
+        - ".claude/skills/ai-prd/references/UI原型纪律.md:77-96"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_QUALITY
+    to: G_PRD_USER
+    category: normal
+    trigger: "质量清单通过"
+    carrier: bundle
+    payloads:
+      - content: "质量清单结果和待用户阅读的 PRD/原型"
+        produced_at: "质量清单逐项勾验完成时"
+        delivered_at: "用户过稿门开始时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd质量清单.md:1-5"
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:206-212"
+      confirmed_at: "2026-08-27"
+
+  - from: G_PRD_USER
+    to: P_PRD_REVIEW_GATE
+    category: normal
+    trigger: "用户逐点回复或整体认可，稿件定稿"
+    carrier: bundle
+    payloads:
+      - content: "用户定稿 PRD、原型批注和修改结论"
+        produced_at: "用户阅读并逐条处理意见时"
+        delivered_at: "派复核子代理前"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:207-215"
+      confirmed_at: "2026-08-27"
+
+  - from: G_PRD_USER
+    to: P_PRD_ASSEMBLE
+    category: reject_or_halt
+    trigger: "用户提出修改意见，稿件尚未定稿"
+    carrier: bundle
+    payloads:
+      - content: "用户逐条反馈与原型批注"
+        produced_at: "用户阅读 PRD/原型时"
+        delivered_at: "返回组稿重新拼装时"
+    concurrency_control: "同一轮意见合并处理"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:209-212"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_REVIEW_GATE
+    to: A_PRD_REVIEW
+    category: normal
+    trigger: "用户过稿门已定稿"
+    carrier: prompt
+    payloads:
+      - content: "复核轴 prompt、PRD 全文与原型结构摘要"
+        produced_at: "复核门准备派发时"
+        delivered_at: "两个复核子代理启动时"
+    concurrency_control: "change/product 两个并行；lite 一个"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:16-24"
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:47-71"
+      confirmed_at: "2026-08-27"
+
+  - from: A_PRD_REVIEW
+    to: P_PRD_REVIEW_GATE
+    category: normal
+    trigger: "复核子代理完成对应轴报告"
+    carrier: bundle
+    payloads:
+      - content: "自洽/冲突报告与处理出口"
+        produced_at: "复核子代理检查 PRD 与现状后"
+        delivered_at: "主会话处理复核结论时"
+    concurrency_control: "同一轴单份报告"
+    screening: "主会话检查每条结论是否为当场改稿、回流到批次或需用户拍板"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:98-139"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_REVIEW_GATE
+    to: G_PRD_PERSIST
+    category: normal
+    trigger: "复核问题均已处理，待拍板条目与改稿清单已整理"
+    carrier: bundle
+    payloads:
+      - content: "复核结论、关键取舍和用户定稿后改动清单"
+        produced_at: "主会话处理复核出口时"
+        delivered_at: "落盘确认门回述时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:215-222"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_REVIEW_GATE
+    to: P_BATCH_B
+    category: reject_or_halt
+    trigger: "冲突轴确认现状条目失实，需要重新取证"
+    carrier: bundle
+    payloads:
+      - content: "失实现状条目与重新取证要求"
+        produced_at: "PRD 冲突轴报告处理时"
+        delivered_at: "回流批 B 时"
+    concurrency_control: "按受影响轴和批次回流"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:119-129"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PRD_REVIEW_GATE
+    to: P_BATCH_D
+    category: reject_or_halt
+    trigger: "自洽轴确认验收项与详细行为不一致，需要补齐准出"
+    carrier: bundle
+    payloads:
+      - content: "验收缺口与回批 D 要求"
+        produced_at: "PRD 自洽轴报告处理时"
+        delivered_at: "回流批 D 时"
+    concurrency_control: "按受影响轴和批次回流"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/prd复核纪律.md:119-129"
+      confirmed_at: "2026-08-27"
+
+  - from: G_PRD_PERSIST
+    to: A_DEV
+    category: normal
+    trigger: "用户确认落盘"
+    carrier: file
+    payloads:
+      - content: "正式 PRD 与 UI 原型文件"
+        produced_at: "落盘确认通过后写入 docs/ 时"
+        delivered_at: "ai-dev-workflow Step 1 读取 PRD 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-prd/references/00-prd生成流程.md:224-232"
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:98-111"
+      confirmed_at: "2026-08-27"
+
+  - from: P_LEAN_SPEC
+    to: G_COMPAT
+    category: normal
+    trigger: "Lean spec 写好，开始实现前"
+    carrier: file
+    payloads:
+      - content: "Lean Change Spec 与既有可观察行为清单"
+        produced_at: "Lean 路径生成一页 spec 时"
+        delivered_at: "兼容取舍确认门前"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:21-24"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:690-701"
+      confirmed_at: "2026-08-27"
+
+  - from: P_STEP1
+    to: P_OVERVIEW
+    category: normal
+    trigger: "Step 1 需求理解与问题清单完成"
+    carrier: file
+    payloads:
+      - content: "需求理解、问题清单与既有系统清单"
+        produced_at: "Step 1 读取 PRD 并列问题时"
+        delivered_at: "生成 Overview 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:9-39"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:43-76"
+      confirmed_at: "2026-08-27"
+
+  - from: P_OVERVIEW
+    to: P_STEP3
+    category: normal
+    trigger: "Overview 与 A/B 核查完成"
+    carrier: file
+    payloads:
+      - content: "Overview、Project Map、已定决策和开放问题"
+        produced_at: "Overview 设计和核查完成时"
+        delivered_at: "Step 3 业务细节澄清时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:63-78"
+      confirmed_at: "2026-08-27"
+
+  - from: P_STEP3
+    to: P_SPEC
+    category: normal
+    trigger: "业务规则、权限、异常和边界已澄清"
+    carrier: file
+    payloads:
+      - content: "修订后的 Overview 与业务约束"
+        produced_at: "Step 3 用户/内部澄清完成时"
+        delivered_at: "Step 4 生成 spec 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:116-125"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:129-143"
+      confirmed_at: "2026-08-27"
+
+  - from: P_SPEC
+    to: G_COMPAT
+    category: normal
+    trigger: "spec 定稿前需要决定既有行为如何延续"
+    carrier: file
+    payloads:
+      - content: "工程 spec、替换清单和受影响的既有行为"
+        produced_at: "Step 4 写 spec 与替换清单时"
+        delivered_at: "兼容取舍确认门时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:129-143"
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:115-133"
+      confirmed_at: "2026-08-27"
+
+  - from: G_COMPAT
+    to: P_PLAN
+    category: normal
+    trigger: "兼容取舍已由拍板人确认并写入 spec"
+    carrier: file
+    payloads:
+      - content: "兼容决策、到期动作和替换清单结论"
+        produced_at: "兼容确认门拍板时"
+        delivered_at: "生成 Coding Plan 时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:123-133"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:161-168"
+      confirmed_at: "2026-08-27"
+
+  - from: P_PLAN
+    to: P_CODE
+    category: normal
+    trigger: "Coding Plan 完成"
+    carrier: file
+    payloads:
+      - content: "带文件、测试、验证命令和提交边界的任务计划"
+        produced_at: "Step 6 生成 coding plan 时"
+        delivered_at: "Step 7 coding agent 开始执行时"
+    concurrency_control: "按任务依赖排队"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:161-174"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-1-7-设计与实现.md:178-180"
+      confirmed_at: "2026-08-27"
+
+  - from: P_CODE
+    to: G_CODE_REVIEW
+    category: normal
+    trigger: "编码完成且基础验证通过"
+    carrier: bundle
+    payloads:
+      - content: "代码 diff、提交、spec/plan 与替换清单"
+        produced_at: "Step 7 实现与基础验证完成时"
+        delivered_at: "代码评审门启动时"
+    concurrency_control: "评审轴并行，修改后按受影响轴重跑"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:137-149"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:13-18"
+      confirmed_at: "2026-08-27"
+
+  - from: G_CODE_REVIEW
+    to: A_CODE_REVIEW
+    category: normal
+    trigger: "代码评审门启动"
+    carrier: prompt
+    payloads:
+      - content: "轴专属评审 prompt、diff、spec、plan 与替换清单"
+        produced_at: "代码评审门组装评审对象时"
+        delivered_at: "四轴子代理启动时"
+    concurrency_control: "完整流程四个并行；Lean 一个子代理分四节"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:13-19"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:45-70"
+      confirmed_at: "2026-08-27"
+
+  - from: A_CODE_REVIEW
+    to: G_CODE_REVIEW
+    category: normal
+    trigger: "评审子代理返回对应轴报告"
+    carrier: bundle
+    payloads:
+      - content: "规范/忠实/残留/文档轴报告与 P0/P1 问题"
+        produced_at: "评审子代理检查 diff 与文档后"
+        delivered_at: "主会话处理评审结果时"
+    concurrency_control: "四轴各一份报告"
+    screening: "主会话核对问题位置、严重度、替换清单和卡片核销证据"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:72-136"
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:151-162"
+      confirmed_at: "2026-08-27"
+
+  - from: G_CODE_REVIEW
+    to: P_TEST_SPEC
+    category: normal
+    trigger: "P0/P1 全部修完且代码评审门通过"
+    carrier: bundle
+    payloads:
+      - content: "通过的评审结论、修复代码与替换清单核销结果"
+        produced_at: "代码评审问题修复并重跑受影响轴时"
+        delivered_at: "Step 8 测试 spec 启动时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:149-149"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:1-8"
+      confirmed_at: "2026-08-27"
+
+  - from: G_CODE_REVIEW
+    to: P_CODE
+    category: reject_or_halt
+    trigger: "评审发现 P0/P1，需要修复实现后重跑受影响轴"
+    carrier: bundle
+    payloads:
+      - content: "评审问题、位置和修复要求"
+        produced_at: "代码评审子代理返回报告时"
+        delivered_at: "主会话回到 Step 7 修复时"
+    concurrency_control: "按受影响轴重跑，不并行重复修复"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/代码评审纪律.md:151-156"
+      confirmed_at: "2026-08-27"
+
+  - from: P_TEST_SPEC
+    to: P_TEST_CODE
+    category: normal
+    trigger: "测试 spec 与 Fixture 方案完成"
+    carrier: file
+    payloads:
+      - content: "测试方案、Fixture、API 模型和覆盖度台账条目"
+        produced_at: "Step 8 风险驱动设计时"
+        delivered_at: "Step 9 编写测试代码时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:6-21"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:25-30"
+      confirmed_at: "2026-08-27"
+
+  - from: P_TEST_CODE
+    to: P_E2E
+    category: normal
+    trigger: "单仓测试与模拟链路测试完成"
+    carrier: bundle
+    payloads:
+      - content: "测试代码、测试结果和真实样本"
+        produced_at: "Step 9 测试代码执行时"
+        delivered_at: "Step 10 跨服务链路测试时"
+    concurrency_control: "按测试环境串行"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:25-30"
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:34-41"
+      confirmed_at: "2026-08-27"
+
+  - from: P_E2E
+    to: G_MERGE
+    category: normal
+    trigger: "跨服务链路测试全绿且覆盖度台账已复核"
+    carrier: bundle
+    payloads:
+      - content: "端到端验证结果、覆盖度台账和待索要素材清单"
+        produced_at: "Step 10 链路测试与准出复核时"
+        delivered_at: "完成与自动合并门时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/步骤-8-10-测试.md:34-45"
+      confirmed_at: "2026-08-27"
+
+  - from: G_MERGE
+    to: A_DEV
+    category: normal
+    trigger: "完成条件满足，按 merge-gate 执行合并"
+    carrier: event
+    payloads:
+      - content: "合并结果与合并后验证结果"
+        produced_at: "主分支合并完成时"
+        delivered_at: "完成报告与 worktree 清理时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - ".claude/skills/ai-dev-workflow/references/core/00-流程总纲.md:153-161"
+        - ".claude/skills/ai-dev-workflow/references/core/路径-lean.md:651-660"
+      confirmed_at: "2026-08-27"
