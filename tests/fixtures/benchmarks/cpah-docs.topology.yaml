@@ -1,0 +1,536 @@
+schema_version: 1
+source_project: "~/projects/cpah-docs"
+generated_at: "2026-08-27"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "Tauri 应用启动后同时启动目录监控、Agent 分类和知识库索引后台；用户也可通过命令调整开关、规则或手动重试。此次范围覆盖 src-tauri/src 的转换与可选分类主链。主动排除：src 前端组件不作为编排方块；diagnostics、logging、atomic_file 与 storage 的纯持久化/观测辅助合并在调用它们的程序中；未发现的 MCP、Skill、子代理不另造方块。"
+  exits:
+    - name: "转换完成"
+      kind: normal
+      condition: "源文件转换或直通同步成功，Markdown 产物写入输出目录"
+      source:
+        refs:
+          - "src-tauri/src/runtime.rs:598-615"
+        confirmed_at: "2026-08-27"
+    - name: "MinerU 等待重试"
+      kind: abnormal
+      condition: "MinerU 网络错误或未配置 Token，任务标为 waiting_mineru"
+      source:
+        refs:
+          - "src-tauri/src/runtime.rs:1056-1064"
+        confirmed_at: "2026-08-27"
+    - name: "分类失败"
+      kind: abnormal
+      condition: "Agent 运行未写入分类或返回不可重试错误，任务标为 failed"
+      source:
+        refs:
+          - "src-tauri/src/tag_runtime.rs:530-536"
+          - "src-tauri/src/tagging.rs:302-315"
+        confirmed_at: "2026-08-27"
+    - name: "后台停止"
+      kind: abnormal
+      condition: "任一后台 run 返回错误，状态写入对应 runtime_error"
+      source:
+        refs:
+          - "src-tauri/src/runtime.rs:87-92"
+          - "src-tauri/src/tag_runtime.rs:47-52"
+          - "src-tauri/src/index_runtime.rs:23-28"
+        confirmed_at: "2026-08-27"
+
+groups:
+  - id: monitor
+    name: "监控与调度"
+    order: 1
+  - id: conversion
+    name: "文档转换"
+    order: 2
+  - id: classification
+    name: "Agent 分类"
+    order: 3
+  - id: indexing
+    name: "知识库索引"
+    order: 4
+
+nodes:
+  - id: monitor_scan
+    name: "监控目录扫描"
+    kind: program
+    responsibility: "监听多个输入目录并扫描出受支持、已启用的源文件路径"
+    inputs: "监控目录配置、文件系统事件、启用的扩展名"
+    outputs: "待处理源文件路径与 Reconcile 消息"
+    purpose: "把启动扫描、定时重扫和文件事件统一转成处理请求"
+    group: monitor
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:97-135"
+        - "src-tauri/src/runtime.rs:254-294"
+        - "src-tauri/src/runtime.rs:335-363"
+      confirmed_at: "2026-08-27"
+
+  - id: task_scheduler
+    name: "转换任务调度"
+    kind: program
+    responsibility: "校验路径、去重并发请求，写入任务队列后启动处理协程"
+    inputs: "源文件路径、处理请求优先级、暂停状态"
+    outputs: "排队任务、活动路径锁和 process_path 调用"
+    purpose: "控制同一路径的并发与延后请求，并在任务结束后派发挂起请求"
+    group: monitor
+    concurrency:
+      default: 2
+      max: 2
+      note: "runtime 使用 Semaphore::new(2)"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:382-508"
+        - "src-tauri/src/runtime.rs:119-123"
+      confirmed_at: "2026-08-27"
+
+  - id: engine_choice
+    name: "选择转换引擎"
+    kind: decision
+    responsibility: "按源文件扩展名决定走 anytomd 本地转换还是 MinerU"
+    inputs: "源文件路径"
+    outputs: "ConversionEngine::Anytomd 或 ConversionEngine::Mineru"
+    purpose: "按 LOCAL_EXTENSIONS 与 MINERU_EXTENSIONS 的集合分岔"
+    group: conversion
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/converter.rs:13-16"
+        - "src-tauri/src/converter.rs:45-53"
+        - "src-tauri/src/runtime.rs:542-557"
+      confirmed_at: "2026-08-27"
+
+  - id: local_converter
+    name: "本地 anytomd 转换"
+    kind: program
+    responsibility: "调用 anytomd 将本地支持的 Office、HTML、CSV、文本或 Markdown 转成转换产物"
+    inputs: "本地源文件"
+    outputs: "ConversionArtifact（Markdown、附件、警告）或转换错误"
+    purpose: "在本机完成不需要 MinerU 的格式转换"
+    group: conversion
+    concurrency:
+      default: 2
+      max: 2
+      note: "由 runtime 的全局 Semaphore 限制"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/converter.rs:154-206"
+        - "src-tauri/src/runtime.rs:565-594"
+      confirmed_at: "2026-08-27"
+
+  - id: mineru_converter
+    name: "MinerU 云端转换"
+    kind: program
+    responsibility: "向 MinerU 申请上传地址、上传源文件、轮询解析并下载 Markdown 或 ZIP 产物"
+    inputs: "源文件、MinerU base URL、Token"
+    outputs: "MinerU 解析结果与 ConversionArtifact，或 waiting_mineru/failed 错误"
+    purpose: "为 PDF、图片和其他 MinerU 扩展名提供云端解析路径"
+    group: conversion
+    concurrency:
+      default: 2
+      max: 2
+      note: "由 runtime 的全局 Semaphore 限制"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:631-678"
+        - "src-tauri/src/mineru.rs:92-139"
+        - "src-tauri/src/mineru.rs:141-202"
+        - "src-tauri/src/mineru.rs:204-230"
+      confirmed_at: "2026-08-27"
+
+  - id: artifact_writer
+    name: "Markdown 产物写入"
+    kind: program
+    responsibility: "安全写入 Markdown、frontmatter 和附件目录，并在成功后触发分类"
+    inputs: "ConversionArtifact、任务记录、输出目录配置"
+    outputs: "输出目录中的 Markdown 与附件；分类 Path 消息"
+    purpose: "把转换结果原子落盘并保持附件引用与输出目录一致"
+    group: conversion
+    concurrency:
+      default: 2
+      max: 2
+      note: "由 runtime 的全局 Semaphore 限制"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/converter.rs:252-321"
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+
+  - id: tag_queue
+    name: "分类队列调度"
+    kind: program
+    responsibility: "扫描输出目录中的 Markdown，按规则和 Agent 配置排队并发分类任务"
+    inputs: "输出目录事件、分类配置、Agent 设置、tag_jobs 状态"
+    outputs: "Queued/Reading/Writing/Completed/Failed 状态与 run_tag_agent 调用"
+    purpose: "过滤 index、临时目录和已处理文件，控制 Agent 并发并处理重试请求"
+    group: classification
+    concurrency:
+      default: 1
+      max: 4
+      note: "settings.agent.concurrency 在 1 到 4 之间截断"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/tag_runtime.rs:57-147"
+        - "src-tauri/src/tag_runtime.rs:172-237"
+        - "src-tauri/src/tag_runtime.rs:410-477"
+        - "src-tauri/src/tag_runtime.rs:487-548"
+      confirmed_at: "2026-08-27"
+
+  - id: classifier_agent
+    name: "文档分类 Agent"
+    kind: agent
+    responsibility: "读取 Markdown 分块，从候选类别中选择标签并调用 update_document_categories 写入 cpah_categories"
+    inputs: "Markdown 初始片段、后续分块、选择模式、候选类别"
+    outputs: "分类类别、写入后的内容哈希和调用用量；失败诊断"
+    group: classification
+    concurrency:
+      default: 1
+      max: 4
+      note: "每个任务一个会话，整体并发由 tag_queue 控制"
+    system_prompt:
+      inline: |
+        你是文档分类 Agent。你只能使用提供的两个工具。先用 read_markdown_chunk 顺序读取当前文档；信息足够后必须调用 update_document_categories。只能从候选类别中选择，禁止创造新类别。
+    tools:
+      - read_markdown_chunk
+      - update_document_categories
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "update_document_categories 成功写入后由 Hook 停止"
+        - "模型轮次没有工具调用时由 Hook retry_with_feedback，直到写入或 attempt 结束"
+        - "单次 Agent 运行超过 10 分钟"
+      limits:
+        steps: "每个 attempt 使用 default_max_turns，累计最多 10 次模型调用"
+        time: "单次 Agent 运行 10 分钟"
+        cost: not_set
+        consecutive_failures: "最多 3 次 attempt；attempt == 2 后停止"
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/tagging.rs:232-325"
+        - "src-tauri/src/tagging.rs:381-415"
+        - "src-tauri/src/tagging.rs:110-193"
+      confirmed_at: "2026-08-27"
+
+  - id: index_builder
+    name: "知识库索引重建"
+    kind: program
+    responsibility: "监听输出目录变化，去抖后重建各监控目录的 index.md"
+    inputs: "输出目录文件事件、监控目录配置"
+    outputs: "按目录和标签生成的 index.md 文件；索引运行错误状态"
+    purpose: "把转换和分类后的 Markdown 汇总成可浏览的目录与标签索引"
+    group: indexing
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/index_runtime.rs:33-90"
+        - "src-tauri/src/index_runtime.rs:165-179"
+        - "src-tauri/src/knowledge_index.rs:27-40"
+      confirmed_at: "2026-08-27"
+
+  - id: tool_calling_probe
+    name: "Tool Calling 连通性探针"
+    kind: agent
+    responsibility: "在用户测试连接时用独立提示词要求模型调用 cpah_tool_calling_probe"
+    inputs: "用户提供的 base URL、模型名和 API key"
+    outputs: "工具调用成功或不支持 Tool Calling 的错误"
+    group: classification
+    concurrency:
+      default: 1
+    system_prompt:
+      inline: "必须调用 cpah_tool_calling_probe，参数 value 固定为 ok。"
+    tools:
+      - cpah_tool_calling_probe
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "cpah_tool_calling_probe 被调用后测试结束"
+        - "Tool Calling 探针超过 60 秒"
+      limits:
+        steps: "最多 2 个模型轮次"
+        time: "60 秒"
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/tagging.rs:796-847"
+      confirmed_at: "2026-08-27"
+
+  - id: settings_commands
+    name: "设置与分类命令"
+    kind: program
+    responsibility: "校验并保存 Agent/分类设置，向分类后台发送 Reload、ApplyRules 或 Retry 消息"
+    inputs: "Tauri 命令参数与 AppState"
+    outputs: "持久化设置、分类运行消息和 Tool Calling 探针调用"
+    purpose: "把前端设置、暂停、应用规则和手动重试转成后台消息"
+    group: classification
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/commands.rs:287-310"
+        - "src-tauri/src/commands.rs:314-352"
+        - "src-tauri/src/commands.rs:355-378"
+        - "src-tauri/src/commands.rs:423-465"
+        - "src-tauri/src/commands.rs:479-490"
+      confirmed_at: "2026-08-27"
+
+edges:
+  - from: monitor_scan
+    to: task_scheduler
+    category: normal
+    trigger: "目录扫描或 watcher 收到源文件事件"
+    carrier: event
+    payloads:
+      - content: "RuntimeMessage::Path { path, force: false }"
+        produced_at: "runtime watcher 回调或 scan_all 枚举文件时"
+        delivered_at: "runtime 主循环收到消息并调用 handle_path 时"
+      - content: "RuntimeMessage::Reconcile"
+        produced_at: "删除或重命名事件进入 watcher 回调时"
+        delivered_at: "runtime 主循环处理 Reconcile 分支时"
+    concurrency_control: "同一路径由 ActivePaths 合并 pending 请求并按优先级保留"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:102-115"
+        - "src-tauri/src/runtime.rs:141-180"
+      confirmed_at: "2026-08-27"
+
+  - from: task_scheduler
+    to: engine_choice
+    category: normal
+    trigger: "路径通过文件类型、扩展名、监控目录和去重检查并写入 queued task"
+    carrier: bundle
+    payloads:
+      - content: "源文件路径、相对路径、文件大小和修改时间"
+        produced_at: "schedule_path 校验并读取 metadata 时"
+        delivered_at: "queue_task 返回任务并进入 process_path 时"
+    concurrency_control: "同一路径只允许一个 running，重复请求放入 pending"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:390-464"
+      confirmed_at: "2026-08-27"
+
+  - from: engine_choice
+    to: local_converter
+    category: pass_or_skip
+    trigger: "default_engine 返回 ConversionEngine::Anytomd"
+    carrier: bundle
+    payloads:
+      - content: "本地转换任务与源文件"
+        produced_at: "process_path 选择 Anytomd 分支时"
+        delivered_at: "调用 convert_locally 时"
+    concurrency_control: "由 runtime Semaphore(2) 排队"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:565-594"
+        - "src-tauri/src/converter.rs:45-53"
+      confirmed_at: "2026-08-27"
+
+  - from: engine_choice
+    to: mineru_converter
+    category: pass_or_skip
+    trigger: "default_engine 返回 ConversionEngine::Mineru"
+    carrier: bundle
+    payloads:
+      - content: "MinerU 任务、源文件和 profile"
+        produced_at: "process_path 选择 Mineru 分支时"
+        delivered_at: "调用 run_mineru 时"
+    concurrency_control: "由 runtime Semaphore(2) 排队"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:565-596"
+        - "src-tauri/src/converter.rs:45-53"
+      confirmed_at: "2026-08-27"
+
+  - from: local_converter
+    to: artifact_writer
+    category: normal
+    trigger: "anytomd 转换返回非空 ConversionArtifact"
+    carrier: bundle
+    payloads:
+      - content: "ConversionArtifact（markdown、images、warnings）"
+        produced_at: "convert_locally 完成时"
+        delivered_at: "write_artifact 调用时"
+    concurrency_control: "不会发生（单个任务顺序执行）"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/converter.rs:188-206"
+        - "src-tauri/src/runtime.rs:582-589"
+      confirmed_at: "2026-08-27"
+
+  - from: mineru_converter
+    to: artifact_writer
+    category: normal
+    trigger: "MinerU poll 返回 done 且 download 成功"
+    carrier: bundle
+    payloads:
+      - content: "MinerU 下载并解压得到的 ConversionArtifact"
+        produced_at: "MinerU download 完成时"
+        delivered_at: "run_mineru 调用 write_artifact 时"
+    concurrency_control: "不会发生（单个任务顺序执行）"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:653-677"
+        - "src-tauri/src/mineru.rs:204-230"
+      confirmed_at: "2026-08-27"
+
+  - from: artifact_writer
+    to: tag_queue
+    category: pass_or_skip
+    trigger: "转换成功且 profile.tagging.enabled 且候选类别非空"
+    carrier: event
+    payloads:
+      - content: "TagRuntimeMessage::Path { path: output, force: true }"
+        produced_at: "process_path 成功写入输出后"
+        delivered_at: "tag_runtime 主循环处理 Path 消息时"
+    concurrency_control: "tag_runtime active.paths 去重，同路径 force 请求记录在 force_after"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+        - "src-tauri/src/tag_runtime.rs:108-111"
+      confirmed_at: "2026-08-27"
+
+  - from: tag_queue
+    to: classifier_agent
+    category: normal
+    trigger: "分类未暂停、Agent 已配置、规则哈希匹配且 queued 任务可用；或同一路径 force 请求在前一任务完成后重新入队"
+    carrier: prompt
+    payloads:
+      - content: "Markdown 初始 4 KiB 片段与继续读取指令"
+        produced_at: "run_agent_once 预读 read_chunk_with_limit 时"
+        delivered_at: "agent.runner(prompt).run 首轮消息时"
+      - content: "候选类别、选择模式和两个动态工具"
+        produced_at: "run_agent_once 构建 preamble 与 dynamic_tools 时"
+        delivered_at: "模型会话 build 完成并开始运行时"
+      - content: "复用原路径的 TagRuntimeMessage::Path { force: true }"
+        produced_at: "tag_runtime 发现 active.paths 已存在并记录 force_after 时"
+        delivered_at: "当前 Agent 任务完成后重新入队时"
+    concurrency_control: "按 settings.agent.concurrency 取 1 到 4 个并行任务"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/tag_runtime.rs:415-487"
+        - "src-tauri/src/tagging.rs:344-411"
+      confirmed_at: "2026-08-27"
+
+  - from: classifier_agent
+    to: tag_queue
+    category: normal
+    trigger: "Agent 写入 cpah_categories 后 run_tag_agent 返回 TagRunResult"
+    carrier: bundle
+    payloads:
+      - content: "分类类别、最终内容哈希、读取字节数、模型调用和 token 用量"
+        produced_at: "update_document_categories 写入成功并设置 session.wrote 时"
+        delivered_at: "tag_runtime complete_tag_job 调用时"
+    concurrency_control: "单个任务完成后移除 active.paths，再发送 Pump 或 force Path"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/tagging.rs:554-565"
+        - "src-tauri/src/tag_runtime.rs:497-548"
+      confirmed_at: "2026-08-27"
+
+  - from: settings_commands
+    to: tag_queue
+    category: normal
+    trigger: "用户保存分类设置、暂停切换、应用规则或请求手动重试"
+    carrier: event
+    payloads:
+      - content: "TagRuntimeMessage::Reload / Start / ApplyRules"
+        produced_at: "对应 Tauri command 保存设置后"
+        delivered_at: "tag_runtime receiver 收到消息时"
+      - content: "TagRuntimeMessage::Retry / RetryMany"
+        produced_at: "用户点击单个或批量重试后"
+        delivered_at: "tag_runtime retry_jobs 调用时"
+    concurrency_control: "无界 mpsc 队列按接收顺序处理"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/commands.rs:287-310"
+        - "src-tauri/src/commands.rs:423-465"
+        - "src-tauri/src/commands.rs:479-490"
+        - "src-tauri/src/tag_runtime.rs:82-145"
+      confirmed_at: "2026-08-27"
+
+  - from: settings_commands
+    to: tool_calling_probe
+    category: normal
+    trigger: "用户调用 test_agent_connection"
+    carrier: prompt
+    payloads:
+      - content: "独立的 cpah_tool_calling_probe 工具、固定 value=ok 的提示词和测试消息"
+        produced_at: "test_tool_calling 装配 Agent 时"
+        delivered_at: "agent.runner(执行工具调用测试。) 运行时"
+    concurrency_control: "不会发生（连接测试 command 内单次调用）"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/commands.rs:355-378"
+        - "src-tauri/src/tagging.rs:796-847"
+      confirmed_at: "2026-08-27"
+
+  - from: artifact_writer
+    to: index_builder
+    category: normal
+    trigger: "输出目录中的 Markdown 或附件变化被索引 watcher 观察到"
+    carrier: event
+    payloads:
+      - content: "IndexRuntimeMessage::Path(output_path)"
+        produced_at: "index_runtime watcher 收到输出目录事件时"
+        delivered_at: "去抖达到 1 秒并调用 rebuild_one 时"
+    concurrency_control: "同一 profile 以 dirty 时间戳去抖，达到 DEBOUNCE 后合并重建"
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/index_runtime.rs:38-45"
+        - "src-tauri/src/index_runtime.rs:68-85"
+      confirmed_at: "2026-08-27"
+
+  - from: classifier_agent
+    to: index_builder
+    category: normal
+    trigger: "分类 Agent 原子替换 Markdown 后被输出目录 watcher 观察到"
+    carrier: event
+    payloads:
+      - content: "分类后的 Markdown 文件变更事件"
+        produced_at: "write_cpah_categories_checked 完成 atomic_replace 时"
+        delivered_at: "index_runtime 去抖后重建对应 profile 索引时"
+    concurrency_control: "同一 profile 的事件在 dirty 表中按 1 秒窗口合并"
+    confidence: inferred
+    field_confidence:
+      payloads: inferred
+    source:
+      refs:
+        - "src-tauri/src/tagging.rs:630-641"
+        - "src-tauri/src/index_runtime.rs:38-45"
+        - "src-tauri/src/index_runtime.rs:75-85"
+      confirmed_at: "2026-08-27"
