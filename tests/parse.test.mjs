@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { parseTopology, TopologyError } from '../scripts/lib/parse.mjs';
-import { FX, catchErr } from './helpers.mjs';
+import { FX, TMP, catchErr } from './helpers.mjs';
 
 const read = (p) => readFileSync(p, 'utf8');
 
@@ -55,4 +56,39 @@ test('BOM 开头报错', () => {
   assert.ok(err instanceof TopologyError);
   assert.equal(err.code, 'E_SYNTAX');
   assert.match(err.message, /BOM/);
+});
+
+test('语法错的 CLI 输出 MUST 带行号（FR-021）', () => {
+  mkdirSync('tests/tmp', { recursive: true });
+  const bad = 'tests/tmp/tab-indent.topology.yaml';
+  writeFileSync(bad, 'schema_version: 1\nsource_project: "x"\ngraph:\n\tbad: tab\n');
+  for (const cli of ['scripts/validate.mjs', 'scripts/render.mjs']) {
+    const args = cli.includes('render') ? [cli, bad, '-o', TMP('tab.html')] : [cli, bad];
+    const r = spawnSync('node', args, { encoding: 'utf8' });
+    assert.equal(r.status, 3, `${cli} 退出码应为 3`);
+    assert.match(r.stderr, /:4\s/, `${cli} 的错误输出没带行号：${r.stderr}`);
+    assert.match(r.stderr, /Tab/, `${cli} 的错误输出没说是什么语法：${r.stderr}`);
+  }
+});
+
+test('引号标量跨行 MUST 报专门的错并指到引号那一行', () => {
+  const e = catchErr(() => parseTopology('schema_version: 1\nname: "第一行\n  第二行"\n', 'x'));
+  assert.equal(e.code, 'E_SYNTAX');
+  assert.equal(e.line, 2, '应指到引号开始那一行，不是下一行');
+  assert.match(e.message, /同一行闭合/);
+  assert.match(e.message, /\|/, '应提示改用块标量');
+});
+
+test('正常的单双引号标量不受影响', () => {
+  const { data } = parseTopology('a: "双引号"\nb: \'单引号\'\nc: 裸标量\n', 'x');
+  assert.deepEqual(data, { a: '双引号', b: '单引号', c: '裸标量' });
+});
+
+test('引号的几个边界：空串收下，单个引号报未闭合，串中间的引号不误伤', () => {
+  assert.deepEqual(parseTopology('a: ""\n', 'x').data, { a: '' });
+  assert.deepEqual(parseTopology("b: ''\n", 'x').data, { b: '' });
+  assert.deepEqual(parseTopology('e: 裸"中间有引号\n', 'x').data, { e: '裸"中间有引号' });
+  for (const src of ['c: "\n', "d: '\n"]) {
+    assert.match(catchErr(() => parseTopology(src, 'x')).message, /同一行闭合/, src);
+  }
 });

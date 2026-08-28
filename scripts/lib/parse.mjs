@@ -26,13 +26,21 @@ function parseScalar(value, line) {
   if (text === 'false') return false;
   if (text === 'null' || text === '') return null;
   if (/^-?\d+$/.test(text)) return Number(text);
-  if (text.startsWith('"') && text.endsWith('"')) {
+  if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
     return text.slice(1, -1).replace(/\\([\\"nt])/g, (_, char) => {
       const escapes = { '\\': '\\', '"': '"', n: '\n', t: '\t' };
       return escapes[char];
     });
   }
-  if (text.startsWith("'") && text.endsWith("'")) return text.slice(1, -1);
+  if (text.startsWith("'") && text.endsWith("'") && text.length >= 2) return text.slice(1, -1);
+  // 引号开了却没在本行闭合——最常见的是把长文本按习惯换了行。
+  // 不给这条专门的消息，报出来的会是下一行的「缩进层级不支持」，指错地方也说错原因。
+  for (const quote of ['"', "'"]) {
+    if (text.startsWith(quote) && !(text.length >= 2 && text.endsWith(quote))) {
+      throw new TopologyError(
+        `引号标量没有在同一行闭合；多行文本请改用 | 或 |-`, 'E_SYNTAX', null, line);
+    }
+  }
   const hash = text.indexOf(' #');
   return hash >= 0 ? text.slice(0, hash).trimEnd() : text;
 }

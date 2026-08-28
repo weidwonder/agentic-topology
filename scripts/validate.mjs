@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseTopology } from './lib/parse.mjs';
 import { validate } from './lib/validate.mjs';
+import { errorText } from './lib/error-text.mjs';
 
 function textOutput(result) {
   if (result.ok) return `✅ 描述合格：${result.stats.nodes} 个节点、${result.stats.edges} 条边\n`;
@@ -22,6 +23,6 @@ try {
   }
   process.exitCode = result.ok ? 0 : 2;
 } catch (error) {
-  process.stderr.write(`${error.message}\n`);
+  process.stderr.write(errorText(error, input));
   process.exitCode = error.code === 'E_SYNTAX' ? 3 : 1;
 }

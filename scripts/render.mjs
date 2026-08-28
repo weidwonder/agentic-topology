@@ -8,6 +8,7 @@ import { renderHtml } from './lib/render-html.mjs';
 import { writeOutput } from './lib/write-output.mjs';
 import { resolveTarget } from './lib/nonclobber.mjs';
 import { isStale } from './lib/staleness.mjs';
+import { errorText } from './lib/error-text.mjs';
 
 function textOutput(result) {
   if (result.ok) return `✅ 描述合格：${result.stats.nodes} 个节点、${result.stats.edges} 条边\n`;
@@ -45,6 +46,6 @@ try {
     process.stdout.write(`${target.path}\n`);
   }
 } catch (error) {
-  process.stderr.write(`${error.message}\n`);
+  process.stderr.write(errorText(error, input));
   process.exitCode = error.code === 'E_SYNTAX' ? 3 : 1;
 }
