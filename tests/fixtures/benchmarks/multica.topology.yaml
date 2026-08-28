@@ -1,0 +1,410 @@
+schema_version: 1
+source_project: "~/projects/multica"
+generated_at: "2026-08-27"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: mixed
+  entry: "daemon.Run 启动 pollLoop；批量领取可执行任务后进入本次限定的单任务执行链路。"
+  exits:
+    - name: "任务完成"
+      kind: normal
+      condition: "runTask 返回 completed，随后 reportTaskResult 调用 CompleteTask。"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:4989-5004"
+        confirmed_at: "2026-08-27"
+    - name: "任务失败或阻塞"
+      kind: abnormal
+      condition: "准备、启动、执行或终态回报失败，或 Agent 返回非 completed 状态。"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:4752-4768"
+          - "server/internal/daemon/daemon.go:5040-5075"
+        confirmed_at: "2026-08-27"
+    - name: "任务被取消"
+      kind: cancelled
+      condition: "服务端任务进入终态或任务被删除，watchTaskCancellation 关闭取消通道并中止本地执行。"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:4559-4610"
+          - "server/internal/daemon/daemon.go:4738-4748"
+        confirmed_at: "2026-08-27"
+
+groups:
+  - id: intake
+    name: "领取与准入"
+    order: 1
+  - id: prepare
+    name: "准备运行环境"
+    order: 2
+  - id: execute
+    name: "运行 AI 会话"
+    order: 3
+  - id: settle
+    name: "收尾与回报"
+    order: 4
+
+nodes:
+  - id: poll_dispatch
+    name: "批量领取与派发"
+    kind: program
+    responsibility: "从服务端按可用槽位批量领取任务，并把每个任务交给 handleTask。"
+    inputs: "运行时列表、可用任务槽位、task_available 或轮询唤醒信号"
+    outputs: "已领取的 Task、任务槽位、handleTask 调用"
+    purpose: "统一控制领取并发，并在任务完成后唤醒下一轮领取。"
+    group: intake
+    concurrency:
+      default: 1
+      max: 1
+      note: "单个 daemon 使用一个 runBatchPoller；任务并发由槽位数控制。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4280-4456"
+      confirmed_at: "2026-08-27"
+
+  - id: task_gate
+    name: "任务准入与取消监听"
+    kind: program
+    responsibility: "确认 runtime 仍由 daemon 托管，必要时锁定 local_directory，并监听服务端取消信号。"
+    inputs: "Task、runtimeIndex、local_directory 资源、daemon context"
+    outputs: "可运行任务上下文、runCtx、cancelledByPoll、失败回报"
+    purpose: "在真正启动 Agent 前处理运行时下线、目录互斥和服务端终态。"
+    group: intake
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4613-4725"
+        - "server/internal/daemon/daemon.go:4827-4976"
+      confirmed_at: "2026-08-27"
+
+  - id: prepare_env
+    name: "准备隔离环境"
+    kind: program
+    responsibility: "解析 Agent 配置与技能包，创建或复用任务工作目录，并准备 provider 所需的隔离配置。"
+    inputs: "Task、AgentEntry、技能包、MCP 配置、工作区和项目资源"
+    outputs: "execenv.Environment（WorkDir、RootDir、provider 配置路径）、TaskContextForEnv"
+    purpose: "把任务输入转换为可供 CLI Agent 使用的隔离工作环境。"
+    group: prepare
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:5609-5718"
+        - "server/internal/daemon/daemon.go:5779-5945"
+        - "server/internal/daemon/execenv/execenv.go:249-320"
+        - "server/internal/daemon/execenv/context.go:158-187"
+      confirmed_at: "2026-08-27"
+
+  - id: prompt_context
+    name: "注入上下文并拼接本轮请求"
+    kind: program
+    responsibility: "把运行时 brief 写入 provider 原生上下文文件，按聊天、评论、自动驾驶或快速创建等条件拼出本轮 Prompt。"
+    inputs: "Task、provider、TaskContextForEnv、Environment"
+    outputs: "runtimeBrief、BuildPrompt 生成的用户 Prompt、必要时 ExecOptions.SystemPrompt"
+    purpose: "让不同 CLI 通过各自原生机制获得同一套运行规则，并携带本轮任务输入。"
+    group: prepare
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:5990-6008"
+        - "server/internal/daemon/daemon.go:6233-6288"
+        - "server/internal/daemon/prompt.go:81-128"
+        - "server/internal/daemon/prompt.go:131-234"
+        - "server/internal/daemon/prompt.go:235-380"
+        - "server/internal/daemon/prompt.go:427-607"
+        - "server/internal/daemon/execenv/context.go:996-1076"
+      confirmed_at: "2026-08-27"
+
+  - id: coding_agent
+    name: "统一 CLI 编码 Agent"
+    kind: agent
+    responsibility: "在任务工作目录中执行本轮 Prompt，通过 provider 适配器调用 Claude 或 Codex 等 CLI，并流式交出文本、思考、工具事件和会话结果。"
+    inputs: "本轮 Prompt、可选运行时 brief、ExecOptions（模型、超时、MCP、恢复会话、工作目录）"
+    outputs: "Session.Messages、Session.Result、会话 ID、模型用量、工具事件"
+    group: execute
+    concurrency:
+      default: 1
+      note: "每个 Task 一个会话；daemon 级并发由 pollLoop 槽位控制。"
+    system_prompt:
+      file: "server/internal/daemon/execenv/context.go"
+      from: 996
+      to: 1076
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "provider CLI 自己报告 completed、failed、aborted 或其他终态。"
+        - "daemon idle watchdog 在消息静默且消息队列为空时取消会话。"
+        - "服务端取消监听发现任务已进入终态或任务行已删除。"
+      limits:
+        steps: "由 ExecOptions.MaxTurns 传给具体 provider；具体含义在 CLI 内部。"
+        time: "ExecOptions.Timeout；daemon 另有 AgentIdleWatchdog 与 provider 超时。"
+        cost: not_set
+        consecutive_failures: "同一次 runTask 最多触发一次 fresh-session 重试。"
+    spawns_subagents: false
+    confidence: certain
+    field_confidence:
+      system_prompt.file: inferred
+      tools: unread
+      mcp: unread
+      skills: unread
+      stop.limits.steps: unread
+      stop.limits.time: unread
+    source:
+      refs:
+        - "server/pkg/agent/agent.go:16-22"
+        - "server/pkg/agent/agent.go:24-110"
+        - "server/internal/daemon/daemon.go:6113-6321"
+        - "server/pkg/agent/claude.go:33-67"
+        - "server/pkg/agent/codex.go:820-918"
+      confirmed_at: "2026-08-27"
+
+  - id: drain_watchdog
+    name: "排空消息与看门狗"
+    kind: program
+    responsibility: "读取 Agent 的流式消息，转发任务消息与用量，维护会话指针，并在超时、取消或静默时结束排空。"
+    inputs: "Session.Messages、Session.Result、agent context、task ID"
+    outputs: "报告到服务端的消息批次、toolCount、最终 agent.Result"
+    purpose: "把 provider 的统一事件流转换成服务端可持久化的任务记录，并提供取消与静默终止边界。"
+    group: execute
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6788-7175"
+      confirmed_at: "2026-08-27"
+
+  - id: fresh_retry
+    name: "恢复会话失败后的新会话重试"
+    kind: decision
+    responsibility: "按 ResumeRejected、错误类别和已观察工具调用数判断是否清除旧会话并重新执行一次。"
+    inputs: "首次 agent.Result、priorSessionID、toolCount、provider"
+    outputs: "原结果，或清除 ResumeSessionID 后的第二次 executeAndDrain 结果"
+    purpose: "在确认恢复会话被拒绝且尚未观察到工具调用时，把控制权交回同一任务的新会话。"
+    group: execute
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6326-6391"
+        - "server/internal/daemon/daemon.go:6660-6785"
+      confirmed_at: "2026-08-27"
+
+  - id: terminal_report
+    name: "终态回报与环境留存"
+    kind: program
+    responsibility: "把 completed、blocked 或 cancelled 结果回报服务端，并在任务结束后写入 GC 元数据。"
+    inputs: "TaskResult、task ID、Environment.RootDir、终态 context"
+    outputs: "CompleteTask 或 FailTask 回调、GCMeta 文件、取消确认"
+    purpose: "把本地执行结果映射到服务端任务状态，并为后续环境清理保留父记录信息。"
+    group: settle
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4771-4809"
+        - "server/internal/daemon/daemon.go:4989-5075"
+      confirmed_at: "2026-08-27"
+
+edges:
+  - from: poll_dispatch
+    to: task_gate
+    category: normal
+    trigger: "ClaimTasksWSFirst 返回至少一个 Task。"
+    carrier: bundle
+    payloads:
+      - content: "Task（含 runtime_id、workspace_id、agent、任务类型、恢复会话和项目资源）"
+        produced_at: "服务端批量 claim 响应返回时"
+        delivered_at: "runBatchPoller 为每个任务启动 handleTask 时"
+    concurrency_control: "按 task slot semaphore 获取并发槽位；每个槽位只派一个 Task。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4397-4439"
+      confirmed_at: "2026-08-27"
+
+  - from: task_gate
+    to: prepare_env
+    category: normal
+    trigger: "runtime 存在且 local_directory 锁已取得，或任务不需要该锁。"
+    carrier: bundle
+    payloads:
+      - content: "已确认可执行的 Task、provider、slot 和可取消 runCtx"
+        produced_at: "handleTask 解析 runtime 并建立 runCtx 时"
+        delivered_at: "调用 runner.run/runTask 时"
+    concurrency_control: "同一 local_directory 通过路径互斥锁排队；无该资源的任务不等待。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4637-4725"
+        - "server/internal/daemon/daemon.go:4945-4976"
+      confirmed_at: "2026-08-27"
+
+  - from: prepare_env
+    to: prompt_context
+    category: normal
+    trigger: "Prepare/Reuse 成功并得到 env.WorkDir。"
+    carrier: bundle
+    payloads:
+      - content: "Environment 与 TaskContextForEnv"
+        produced_at: "execenv.Prepare 或 execenv.Reuse 完成时"
+        delivered_at: "InjectRuntimeConfig 和 BuildPrompt 调用时"
+    concurrency_control: "单个 Task 顺序执行准备步骤。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:5779-5991"
+      confirmed_at: "2026-08-27"
+
+  - from: prompt_context
+    to: coding_agent
+    category: normal
+    trigger: "运行时上下文注入完成，且不是旧服务端的 RegenerateQuickActionsFor 拒绝分支。"
+    carrier: prompt
+    payloads:
+      - content: "BuildPrompt 返回的任务 Prompt"
+        produced_at: "BuildPrompt 按 ChatSessionID、TriggerCommentID、AutopilotRunID 或 QuickCreatePrompt 选择分支时"
+        delivered_at: "backend.Execute(agentCtx, prompt, execOpts) 调用时"
+      - content: "provider 需要时的 runtimeBrief（ExecOptions.SystemPrompt）"
+        produced_at: "InjectRuntimeConfig 构造 brief 时"
+        delivered_at: "构造 ExecOptions 并进入 backend.Execute 时"
+    concurrency_control: "同一 Task 只启动一个首轮会话。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6007-6021"
+        - "server/internal/daemon/daemon.go:6233-6321"
+        - "server/pkg/agent/agent.go:24-71"
+      confirmed_at: "2026-08-27"
+
+  - from: coding_agent
+    to: drain_watchdog
+    category: normal
+    trigger: "backend.Execute 返回 Session。"
+    carrier: bundle
+    payloads:
+      - content: "Session.Messages 流与 Session.Result 结果通道"
+        produced_at: "Claude 或 Codex backend 启动 CLI 后创建消息/结果通道时"
+        delivered_at: "executeAndDrain 启动排空 goroutine 时"
+    concurrency_control: "每个会话一个排空器；消息批次按 500ms flush，并受服务端回报请求限制。"
+    confidence: certain
+    source:
+      refs:
+        - "server/pkg/agent/agent.go:125-132"
+        - "server/pkg/agent/claude.go:103-170"
+        - "server/pkg/agent/codex.go:1045-1119"
+        - "server/internal/daemon/daemon.go:6788-6865"
+      confirmed_at: "2026-08-27"
+
+  - from: drain_watchdog
+    to: fresh_retry
+    category: reject_or_halt
+    trigger: "首次结果为 failed、存在 priorSessionID、未观察到工具调用，且 shouldRetryWithFreshSession 判定恢复失败可由新会话缓解。"
+    carrier: bundle
+    payloads:
+      - content: "首次 agent.Result、usage、toolCount 和旧 session ID"
+        produced_at: "首次 executeAndDrain 收到最终结果时"
+        delivered_at: "shouldRetryWithFreshSession 判断并进入重试分支时"
+    concurrency_control: "每个 runTask 最多一次 fresh-session 重试。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6321-6340"
+        - "server/internal/daemon/daemon.go:6660-6715"
+      confirmed_at: "2026-08-27"
+
+  - from: fresh_retry
+    to: drain_watchdog
+    category: normal
+    trigger: "判定需要重试后，清除 ResumeSessionID、重写冷启动上下文并再次调用 executeAndDrain。"
+    carrier: prompt
+    payloads:
+      - content: "清除旧会话后的 freshPrompt、更新后的 ExecOptions 和同一 msgSeq"
+        produced_at: "fresh-session 分支重建 TaskContextForEnv 与 BuildPrompt 时"
+        delivered_at: "第二次 executeAndDrain 调用时"
+    concurrency_control: "第二次会话与首轮串行；结果通过 reconcileFreshRetryResult 合并。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6342-6391"
+      confirmed_at: "2026-08-27"
+
+  - from: drain_watchdog
+    to: terminal_report
+    category: normal
+    trigger: "executeAndDrain 返回后，runTask 完成状态映射；或任务被取消后直接发送取消确认。"
+    carrier: bundle
+    payloads:
+      - content: "TaskResult（状态、输出/错误、session ID、WorkDir、用量和失败原因）"
+        produced_at: "runTask 根据 agent.Result 状态分支构造 TaskResult 时"
+        delivered_at: "handleTask 调用 reportTaskResult 或取消确认时"
+    concurrency_control: "同一 Task 的终态回报串行；terminal callback 使用独立超时上下文。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4725-4788"
+        - "server/internal/daemon/daemon.go:6495-6658"
+      confirmed_at: "2026-08-27"
+
+  - from: task_gate
+    to: coding_agent
+    category: reject_or_halt
+    trigger: "watchTaskCancellation 发现任务已完成、失败、取消或 404 删除。"
+    carrier: event
+    payloads:
+      - content: "关闭 cancelledByPoll 的取消事件"
+        produced_at: "GetTaskStatus 返回终态或 task not found 时"
+        delivered_at: "runCtx 被取消并传播到 backend.Execute 时"
+    concurrency_control: "取消通道只关闭一次；其他临时网络错误不触发取消。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4552-4610"
+        - "server/internal/daemon/daemon.go:4702-4723"
+      confirmed_at: "2026-08-27"
+
+  - from: drain_watchdog
+    to: coding_agent
+    category: reject_or_halt
+    trigger: "idle watchdog 观察到消息静默且队列为空，或 drain context 到期/取消。"
+    carrier: event
+    payloads:
+      - content: "agentCancel 取消信号"
+        produced_at: "runIdleWatchdog 超过适用静默窗口时"
+        delivered_at: "backend 的 runCtx 和 executeAndDrain 的 drainCtx 被取消时"
+    concurrency_control: "每个执行只有一个 watchdog；工具调用在飞时使用更大的工具静默窗口。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6830-6855"
+        - "server/internal/daemon/daemon.go:7168-7215"
+      confirmed_at: "2026-08-27"
+
+  - from: terminal_report
+    to: poll_dispatch
+    category: normal
+    trigger: "任务 goroutine 终止并归还 slot。"
+    carrier: event
+    payloads:
+      - content: "任务槽位归还与 poller wakeup 信号"
+        produced_at: "handleTask 完成终态回报和本地清理后"
+        delivered_at: "runBatchPoller 的下一轮 waitForTaskSlot 时"
+    concurrency_control: "按 slot 原值归还；wakeup 通道合并重复唤醒。"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4427-4439"
+        - "server/internal/daemon/daemon.go:4459-4464"
+      confirmed_at: "2026-08-27"
