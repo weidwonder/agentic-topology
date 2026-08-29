@@ -11,6 +11,7 @@ const TOP_KEYS = new Set([
 ]);
 const GRAPH_KEYS = new Set(['topology', 'context_sharing', 'entry', 'exits']);
 const STOP_KEYS = new Set(['conditions', 'limits']);
+const GROUP_KEYS = new Set(['id', 'name', 'order']);
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 const EXIT_KEYS = new Set(['name', 'kind', 'condition', 'source']);
 const SOURCE_KEYS = new Set(['refs', 'confirmed_at', 'doc_only', 'conflict_note']);
@@ -76,8 +77,10 @@ function nodeCheck(node, index, groupIds, nodeIds, issue) {
     }
   }
   sourceCheck(node.source, `${path}.source`, issue);
-  if ('group' in node && !groupIds.has(node.group)) {
-    issue('E_DANGLING_GROUP', `${path}.group`, 'group 指向不存在的分组');
+  // group 写成 null（或 `group:` 留空）等同于不填——布局与折叠视图本来就这么当，
+  // 只有校验器原先不同意，还报「指向不存在的分组」，把人往错方向带。
+  if (node.group != null && !groupIds.has(node.group)) {
+    issue('E_DANGLING_GROUP', `${path}.group`, `group 指向不存在的分组 ${node.group}`);
   }
   if (!agent && !isString(node.purpose)) issue('E_REQUIRED', `${path}.purpose`, 'purpose 必填');
   if (agent) {
@@ -185,7 +188,19 @@ export function validate(data, lines = new Map()) {
   const groupIds = new Set();
   if (Array.isArray(data.groups)) {
     data.groups.forEach((group, i) => {
-      if (groupIds.has(group.id)) issue('E_DUP_ID', `groups[${i}].id`, '分组 id 重复');
+      const path = `groups[${i}]`;
+      if (!isObject(group)) { issue('E_TYPE', path, '分组必须是对象'); return; }
+      unknown(group, GROUP_KEYS, path, issue);
+      for (const key of ['id', 'name']) {
+        if (!isString(group[key])) issue('E_REQUIRED', `${path}.${key}`, `${key} 必填`);
+      }
+      if (isString(group.id) && !ID_PATTERN.test(group.id)) {
+        issue('E_TYPE', `${path}.id`, 'id 只能用字母、数字、下划线、点、连字符，长度 1-64');
+      }
+      if ('order' in group && !Number.isInteger(group.order)) {
+        issue('E_TYPE', `${path}.order`, 'order 必须是整数');
+      }
+      if (groupIds.has(group.id)) issue('E_DUP_ID', `${path}.id`, '分组 id 重复');
       groupIds.add(group.id);
     });
   }

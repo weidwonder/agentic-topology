@@ -5,11 +5,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { validate } from '../scripts/lib/validate.mjs';
 import { layout } from '../scripts/lib/layout.mjs';
 import { foldSummary } from '../scripts/lib/interactions.mjs';
-import { data, FX, renderOk } from './helpers.mjs';
+import { data, FX, renderOk, sect } from './helpers.mjs';
 
 const SAMPLE = 'assets/templates/example.topology.yaml';
 const run = (...args) => spawnSync('node', args, { encoding: 'utf8' });
@@ -143,4 +143,78 @@ test('样例的提示词文件区间真的能打开，不走「读不到」降�
     `样例自带的提示词路径打不开：\n${r.stderr}`);
   const html = readFileSync('tests/tmp/sample.topology.html', 'utf8');
   assert.equal(html.includes('读不到这段提示词'), false, '样例的提示词下钻走了降级路径');
+});
+
+// ---- 唯一写点的第 ② 条断言（B 轴 P0，spec §7.2 Invariant 1）----------------
+// 这条是 Invariant 2「全程只读目标项目」的强制机制。少了它，出图本身就能往
+// 被分析的项目里写文件，只读承诺形同虚设。
+test('MUST NOT 把图写进被分析的项目里；写到项目之外照常', () => {
+  mkdirSync('tests/tmp/fakeproj/sub', { recursive: true });
+  const project = 'tests/tmp/fakeproj';
+  const doc = readFileSync(SAMPLE, 'utf8').replace(/^source_project:.*$/m, `source_project: "${project}"`);
+  const input = 'tests/tmp/inside.topology.yaml';
+  writeFileSync(input, doc);
+
+  // 先清干净——否则上一轮（比如做变异测试时）留下的文件会让这条断言假红/假绿。
+  rmSync(`${project}/sub/x.topology.html`, { force: true });
+  const inside = run('scripts/render.mjs', input, '-o', `${project}/sub/x.topology.html`, '--force');
+  assert.equal(inside.status, 1, `写进项目内 MUST 退出码 1，实际 ${inside.status}`);
+  assert.match(inside.stderr, /不能把图写进被分析的项目里/);
+  assert.equal(existsSync(`${project}/sub/x.topology.html`), false, '被拒绝了却还是写了文件');
+
+  const outside = run('scripts/render.mjs', input, '-o', 'tests/tmp/outside.topology.html', '--force');
+  assert.equal(outside.status, 0, `写到项目之外不该被拦：\n${outside.stderr}`);
+
+  // 前缀陷阱：/fakeproj-other MUST NOT 被当成在 /fakeproj 之内
+  mkdirSync('tests/tmp/fakeproj-other', { recursive: true });
+  const sibling = run('scripts/render.mjs', input, '-o',
+    'tests/tmp/fakeproj-other/y.topology.html', '--force');
+  assert.equal(sibling.status, 0, '同前缀的兄弟目录被误判成项目内了');
+});
+
+// ---- groups[] 的闭集与必填（B 轴 P1）----------------------------------------
+test('groups[] MUST 走闭集校验，name 必填', () => {
+  const unknownKey = withSample((doc) => { doc.groups[0].foo = '不该有的字段'; });
+  assert.ok(unknownKey.errors.some((e) => e.code === 'E_UNKNOWN_FIELD' && e.path.startsWith('groups[')));
+  const noName = withSample((doc) => { delete doc.groups[0].name; });
+  assert.ok(noName.errors.some((e) => e.path === 'groups[0].name'));
+  const badOrder = withSample((doc) => { doc.groups[0].order = '一'; });
+  assert.ok(badOrder.errors.some((e) => e.path === 'groups[0].order'));
+});
+
+// ---- group 写成 null 等同不填（分析方实测报出的坑）--------------------------
+test('group: null 等同不填；真写错分组名仍 MUST 被拦且报出是哪个', () => {
+  const asNull = withSample((doc) => { doc.nodes.find((n) => n.group).group = null; });
+  assert.equal(asNull.errors.some((e) => e.code === 'E_DANGLING_GROUP'), false,
+    'group 写成 null 被当成了悬空引用');
+  const wrong = withSample((doc) => { doc.nodes.find((n) => n.group).group = 'g99'; });
+  const dangling = wrong.errors.find((e) => e.code === 'E_DANGLING_GROUP');
+  assert.ok(dangling, '真的写错分组名没被拦');
+  assert.match(dangling.message, /g99/, '报错没说清是哪个分组名写错了');
+});
+
+// ---- 三层导航必须互通（B 轴 P1，FR-032）------------------------------------
+test('全貌 ↔ 折叠视图 MUST 双向可达，不能只出不进', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'nav.html');
+  const over = sect(html, 'view-overview');
+  assert.match(over, /data-goto-folded/, '全貌视图里没有进入折叠视图的入口');
+  const script = html.slice(html.lastIndexOf('<script>'));
+  assert.match(script, /\[data-goto-folded\]/, '入口没接事件');
+  assert.match(sect(html, 'view-folded'), /data-expand/);
+});
+
+// ---- 点边看详情（B 轴 P1，FR-026）-------------------------------------------
+test('点一条线 MUST 能跳到它的详情', () => {
+  const html = renderOk(FX('base.topology.yaml'), 'edge-nav.html');
+  assert.match(html, /data-edge-detail="/, '边详情容器不在');
+  const script = html.slice(html.lastIndexOf('<script>'));
+  assert.match(script, /data-edge-id/, '页面脚本没有处理点边——点了没反应');
+  assert.match(script, /data-edge-detail/, '点了边也找不到对应的详情容器');
+});
+
+// ---- 语法子集：复杂键（B 轴指出的 AC-002 覆盖缺口）--------------------------
+test('复杂键 `? ` MUST 被拒，且报出行号', () => {
+  const r = run('scripts/validate.mjs', FX('syntax/complex-key.topology.yaml'));
+  assert.equal(r.status, 3, `期望语法错退出码 3，实际 ${r.status}\n${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /:\d+/, '语法错没带行号');
 });

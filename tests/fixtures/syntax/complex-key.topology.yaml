@@ -1,0 +1,7 @@
+schema_version: 1
+source_project: "demo"
+generated_at: "2026-08-28"
+analysis_complete: true
+graph:
+  ? 复杂键在这一行
+  : 值

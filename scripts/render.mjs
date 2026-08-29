@@ -35,9 +35,13 @@ try {
       process.stderr.write(`${warning}\n`);
     }
     const target = resolveTarget(output, force);
-    await writeOutput(target.path, html);
+    await writeOutput(target.path, html, parsed.data.source_project);
     if (target.renamedFrom) process.stderr.write(`已有一份，已另存为 ${target.path}\n`);
-    process.stdout.write(`${target.path}\n`);
+    // spec §8：成功时 MUST 打印路径与三个数，让人不用打开文件就知道这张图有多大。
+    const checks = (enriched.checklist || []).length;
+    process.stdout.write(`输出：${target.path}\n`);
+    process.stdout.write(
+      `${result.stats.nodes} 个方块 · ${result.stats.edges} 条连线 · ${checks} 处要你核实\n`);
   }
 } catch (error) {
   process.stderr.write(errorText(error, input));

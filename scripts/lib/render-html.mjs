@@ -127,7 +127,9 @@ function overview(data, pageLayout, staleness) {
   const markers = `<defs>${marker('ah-main', 'var(--primary)')}${marker('ah-ok', 'var(--success)')}` +
     `${marker('ah-back', 'var(--destructive)')}</defs>`;
   const head = `<section id="view-overview" class="view"><div class="app-bar">` +
-    `<span class="topo-crumb">${WORDS.labels.overview}</span></div><div class="screen">` +
+    `<span class="topo-crumb">${WORDS.labels.overview}</span><span class="grow"></span>` +
+    `<button class="btn btn-outline btn-sm" data-goto-folded>${esc(WORDS.labels.folded)}</button>` +
+    `</div><div class="screen">` +
     `<div class="row"><span class="badge badge-secondary">${value(WORDS.topology[data.graph?.topology])}</span>` +
     `<span class="badge badge-outline">${value(WORDS.context[data.graph?.context_sharing])}</span>` +
     `<span class="topo-flag is-sure">${(data.nodes || []).length} 个方块</span>` +
@@ -308,7 +310,8 @@ function edgeDetail(edge) {
   const body = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.payload)}<span class="topo-acc-mark">${(edge.payloads || []).length}</span>` +
     `</summary><div class="topo-acc-body">${payloads}</div></details>`;
-  return `<section class="topo-detail topo-edge-detail" data-edge-detail="${esc(edge.from)}->${esc(edge.to)}">` +
+  return `<section id="detail-edge-${value(edgeKey)}" class="topo-detail topo-edge-detail"`
+    + ` data-edge-detail="${esc(edge.from)}->${esc(edge.to)}">` +
     `<div class="topo-edge-detail-title"><span class="mono">${value(edge.from)} → ${value(edge.to)}</span></div>` +
     `<div class="topo-acc"><details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.trigger)}</summary><div class="topo-acc-body"><dl class="kv">${rows.join('')}</dl>` +

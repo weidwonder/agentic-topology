@@ -5,7 +5,7 @@
 schema_version: 1
 source_project: "/Users/weidwonder/projects/multica"
 generated_at: "2026-08-28"
-analysis_complete: false
+analysis_complete: true
 
 graph:
   topology: fixed_workflow
@@ -16,10 +16,58 @@ graph:
     Multica 后端服务器（SaaS，本次范围外）批量申领处于 dispatched 状态的任务
     （ClaimTasksWSFirst，wsrpc.go:315，回退到 client.go:236 的 HTTP 批量申领）。
     每领到一个任务即分配一个并发槽位、起一个 goroutine 调用 handleTask
-    （daemon.go:4613），进入这条链路（对应节点 POLL_DISPATCH）。
-    本次只画"一个任务从被申领到产出结果"这一条链路，不画 daemon 启动时的
-    runtime 注册 / 心跳 / workspace 同步 / 自动更新 / GC 等后台循环——它们不
-    产生或消费这条链路上的任务数据，见范围边界说明。
+    （daemon.go:4613），进入这条链路（对应节点 POLL_DISPATCH）。除了
+    ClaimTasksWSFirst 的主动批量申领，wakeup.go 里还有一条 WebSocket 推送
+    通道（server 主动告知"这些 runtime 有新任务了"）会把同一个 wakeup
+    channel 提前敲响，催 POLL_DISPATCH 提前再申领一轮——它不携带任务本体，
+    只是把"该再问一次了"这件事说得更快，因此不单独成节点/边，记在这里。
+
+    本次按任务要求只画"一个任务从被申领到产出结果"这一条链路，以下按抽取
+    纪律 §6 逐条列出主动排除的部分、排除依据：
+    1. server/pkg/agent/ 目录下除 agent.go / models.go / stream_scanner.go /
+       thinking.go / claude.go / codex.go 外的其余 17 家 CLI 适配器实现
+       文件（codebuddy.go、copilot.go、opencode.go、deveco.go、
+       openclaw.go、hermes.go、pi.go、cursor.go、kimi.go、reasonix.go、
+       kiro.go、antigravity.go、qoder.go、traecli.go、grok.go、qwen.go、
+       qwenpaw.go 等）——任务书明确排除，只留 claude / codex 两个 provider
+       样本挂在 AGENT_BACKEND 节点上。
+    2. server/internal/daemon/execenv/ 与 server/internal/daemon/repocache/
+       两个子目录整体——任务书明确排除。后果是：执行环境到底怎么搭起来的
+       （工作目录准备/复用、MCP 配置文件如何落盘、CODEX_HOME 布局、仓库
+       worktree checkout）、以及事实上承担了"系统提示词"角色的运行时简报
+       （CLAUDE.md / AGENTS.md 等文件）具体写了什么，本次读不到，已在
+       RUN_TASK 与 AGENT_BACKEND 的 responsibility 里点出这一断层，并把
+       AGENT_BACKEND.system_prompt 定位到 prompt.go 里"精简、不含这部分"
+       的说明段落，而不是假装能看到运行时简报本身。
+    3. daemon.go 里与"一个任务从申领到出结果"不相交的后台循环/处理器：
+       New/Run 启动的 workspaceSyncLoop、heartbeatLoop、tokenRenewalLoop、
+       agentDiscoveryLoop（agents_probe.go / agents_refresh.go：CLI 版本
+       探测与 runtime 注册收敛）、autoUpdateLoop（auto_update.go：daemon
+       自身二进制升级）、gcLoop（gc.go / diskusage.go：任务结束之后的工作
+       目录垃圾回收与磁盘用量上报——消费的是 HANDLE_TASK 写的 GC 元数据，
+       但发生在"产出结果"之后，是下一条独立链路）、以及 handleUpdate /
+       handleModelList / handleLocalSkillList 等由服务器心跳下发指令触发的
+       RPC 处理器（模型列表探测、本机 skill 导入——local_skills.go /
+       claude_plugins.go 服务的正是这条支线，不是任务执行期读取的
+       task.Agent.Skills）。这些没有产生或消费这条链路上的 Task/
+       TaskResult 数据，故未建节点。
+    4. 全部 *_test.go 文件、apps/ 下的前端代码——任务书明确排除。
+
+    候选边界留账（节点粒度约定 §5，机械枚举，完整表格见本次分析的最终回复）：
+    按"产生了有名字的中间产物、被另一个代码单元读走"逐一枚举，共枚举出 13
+    处候选（pollLoop / runBatchPoller / handleTask / runTask / execenv 环境
+    准备 / ensureTaskSkillBundles / BuildPrompt / agent.ResolveBackend /
+    backend.Execute / 消息流上报循环 / reportTaskResult+reportTerminalTask /
+    GC 元数据写入 / wakeup.go 的 WS 推送）；其中 6 处对应到本次成的 5 个节点
+    （pollLoop 与 runBatchPoller 按规则 1 合并成 POLL_DISPATCH 一个节点，其余
+    4 处各自单独成节点）；其余 7 处合并/排除：execenv 环境准备（范围外，不
+    建节点）、ensureTaskSkillBundles（规则 1：产物只被同一个函数体后续用到，
+    并入 RUN_TASK）、agent.ResolveBackend（会话执行器/运输工具，按判据不
+    单独成节点）、消息流上报循环与 reportTaskResult/reportTerminalTask
+    （接收方是范围外的远端服务器，不建模成节点，并入相邻节点的 outputs）、
+    GC 元数据写入（消费方 gcLoop 已排除，属于任务产出结果之后的另一条链路）、
+    wakeup.go 的 WS 推送（不携带任务本体，只是提前敲响 POLL_DISPATCH 已有的
+    唤醒信号，并入该节点 inputs，不单独成节点/边）。
   exits:
     - name: "任务完成"
       kind: normal
@@ -199,6 +247,20 @@ nodes:
       对“初始化握手失败”或“模型目录刷新失败”这两类特定启动期故障，在同一次
       Execute 调用里最多再打开一次新进程重试（attempt 2/2），不算新会话/新
       节点（判据见节点粒度约定规则 2）。
+
+      节点数留账（节点粒度约定〈到底看哪一段来分 Agent〉）：claude 与 codex
+      是两个不同的 CLI 二进制、两套完全不同的协议实现（claude.go 的
+      stream-json vs codex.go 的 app-server JSON-RPC），单看这一点像是
+      "另一套客户端、另一条调用链"。但判据要求同时满足"那条链有自己的系统
+      提示词常量"——本仓源码里两者都没有：搜过 claude.go 与 codex.go 全文，
+      没有任何 --append-system-prompt / 内嵌 persona 字符串一类的自有系统
+      提示词常量，两者的"运行时简报"都来自同一个范围外的
+      execenv.InjectRuntimeConfig(workdir, provider, taskCtx) 调用点（仅文件
+      名 CLAUDE.md/AGENTS.md 不同），且 ExecOptions.SystemPrompt 对两者都
+      始终留空。按判据这仍是同一个 Agent 节点，provider 是参数。**如果不看
+      判据、只按"是否另一套客户端协议"这个更粗的标准数，会得到 2 个节点**
+      ——两个数都写在这里，供使用者按需改判；本次描述采用判据给出的数字：
+      1 个 Agent 节点（provider 参数化）。
     inputs: "首轮用户消息 prompt 字符串、ExecOptions（模型、resume 会话 ID、思考等级、service tier、MCP 配置、超时与看门狗阈值、daemon 默认参数与 agent 自定义参数、工作目录等）"
     outputs: "流式 Message（status/text/thinking/tool-use/tool-result/error/log）+ 最终 Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
     concurrency:
@@ -229,6 +291,19 @@ nodes:
       tools: unread
       mcp: unread
       skills: unread
+    # tools 为什么是 unread：claude/codex 的实际可用工具集（文件读写、
+    #   bash、web 等）实现在 claude/codex 这两个外部二进制内部，不在
+    #   multica 仓库任何位置；本仓源码唯一能确认的是 claude.go:729 那一条
+    #   `--disallowedTools AskUserQuestion`（禁用，不是启用清单）。
+    # mcp 为什么是 unread：完全是运行期动态数据，没有写死的固定清单——
+    #   runtime_mcp.go:36-96(mergeRuntimeAndAgentMcpConfig) 把"本机已有的
+    #   provider 原生 MCP 配置文件"(runtime_mcp.go:246-317) 与
+    #   task.Agent.McpConfig(服务器下发，每个 agent 可不同) 合并后经
+    #   --mcp-config(claude) / CODEX_HOME/config.toml(codex) 注入。
+    # skills 为什么是 unread：同样是运行期数据——task.Agent.SkillRefs 由
+    #   服务器按 agent 配置下发，daemon.go:5390-5456
+    #   (ensureTaskSkillBundles) 按需下载到本地缓存(skill_cache.go)，具体
+    #   有哪些 skill 因 agent/task 而异，源码里没有固定清单。
     source:
       refs:
         - "server/pkg/agent/agent.go:16-110"
