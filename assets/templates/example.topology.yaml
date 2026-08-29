@@ -88,7 +88,7 @@ nodes:
     concurrency:
       default: 1
     system_prompt:
-      file: "assets/prompts/planner.v2.md"
+      file: "prompts/planner.v2.md"
       from: 1
       to: 62
     tools:

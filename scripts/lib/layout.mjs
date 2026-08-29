@@ -1,3 +1,4 @@
+import { baseGroups } from './groups.mjs';
 import { measureLabel } from './measure.mjs';
 import { foldSummary } from './interactions.mjs';
 
@@ -85,20 +86,8 @@ function hasGroupCycle(groups, edges, nodes) {
 }
 
 function groupDefinitions(data, nodes, edges) {
-  const declared = Array.isArray(data.groups) ? data.groups : [];
-  if (declared.length === 0 || !nodes.some((node) => node.group)) {
-    return [{ id: '__all__', name: '全部', order: undefined, nodes }];
-  }
-  const definitions = declared.map((group) => ({
-    id: group.id,
-    name: group.name,
-    order: group.order,
-    nodes: nodes.filter((node) => node.group === group.id),
-  }));
-  const ungrouped = nodes.filter((node) => !node.group);
-  if (ungrouped.length > 0) {
-    definitions.push({ id: '__ungrouped__', name: '没标堆的', order: undefined, nodes: ungrouped });
-  }
+  const definitions = baseGroups(data, nodes);
+  if (definitions.length === 1 && definitions[0].id === '__all__') return definitions;
   const allOrdered = definitions.every((group) => group.id === '__ungrouped__' || group.order !== undefined);
   if (allOrdered) {
     return definitions.slice().sort((a, b) => {

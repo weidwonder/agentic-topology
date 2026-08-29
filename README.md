@@ -144,7 +144,7 @@ scripts/
 assets/
   page-shell/             页面外壳与样式
   templates/              最小完整样例
-tests/                    140 个测试，node:test，零依赖
+tests/                    155 个测试，node:test，零依赖
 docs/
   spec/  plan/  report/   需求、实施计划、基准项目核对报告
 ```

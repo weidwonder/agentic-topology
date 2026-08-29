@@ -1,15 +1,7 @@
+import { baseGroups } from './groups.mjs';
+
 function groupList(data) {
-  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
-  const declared = Array.isArray(data.groups) ? data.groups : [];
-  if (declared.length === 0) return [{ id: '__all__', name: '全部', nodes }];
-  const groups = declared.map((group) => ({
-    id: group.id,
-    name: group.name,
-    nodes: nodes.filter((node) => node.group === group.id),
-  }));
-  const ungrouped = nodes.filter((node) => !node.group);
-  if (ungrouped.length > 0) groups.push({ id: '__ungrouped__', name: '没标堆的', nodes: ungrouped });
-  return groups;
+  return baseGroups(data, Array.isArray(data.nodes) ? data.nodes : []);
 }
 
 function chainNodes(nodes, edges) {

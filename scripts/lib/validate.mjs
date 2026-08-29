@@ -6,12 +6,12 @@ const ENUMS = {
   confidence: new Set(['certain', 'inferred', 'unread']),
 };
 
-const COMMON_NODE = new Set([
-  'id', 'name', 'kind', 'responsibility', 'inputs', 'outputs', 'concurrency', 'confidence', 'source',
-  'group', 'field_confidence', 'purpose', 'system_prompt', 'tools', 'mcp', 'skills', 'stop',
-  'spawns_subagents', 'subagents',
+const TOP_KEYS = new Set([
+  'schema_version', 'source_project', 'generated_at', 'analysis_complete', 'graph', 'nodes', 'edges', 'groups',
 ]);
 const GRAPH_KEYS = new Set(['topology', 'context_sharing', 'entry', 'exits']);
+const STOP_KEYS = new Set(['conditions', 'limits']);
+const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 const EXIT_KEYS = new Set(['name', 'kind', 'condition', 'source']);
 const SOURCE_KEYS = new Set(['refs', 'confirmed_at', 'doc_only', 'conflict_note']);
 
@@ -21,6 +21,13 @@ function unknown(object, allowed, path, issue) {
   if (!isObject(object)) return;
   for (const key of Object.keys(object)) if (!allowed.has(key)) {
     issue('E_UNKNOWN_FIELD', `${path}.${key}`, `不支持的字段 ${key}`);
+  }
+}
+
+/** doc_only 的条目 MUST NOT 标 certain——节点、边、exits 三类同一条规则。 */
+function docOnlyCheck(item, path, issue) {
+  if (item?.source?.doc_only === true && item.confidence === 'certain') {
+    issue('E_ENUM', `${path}.confidence`, '只有文档来源，不能标查实了');
   }
 }
 
@@ -52,6 +59,9 @@ function nodeCheck(node, index, groupIds, nodeIds, issue) {
   unknown(node, allowed, path, issue);
   for (const key of ['id', 'name', 'responsibility', 'inputs', 'outputs']) {
     if (!isString(node[key])) issue('E_REQUIRED', `${path}.${key}`, `${key} 必填`);
+  }
+  if (isString(node.id) && !ID_PATTERN.test(node.id)) {
+    issue('E_TYPE', `${path}.id`, 'id 只能用字母、数字、下划线、点、连字符，长度 1-64');
   }
   if (!ENUMS.node_kind.has(node.kind)) issue('E_ENUM', `${path}.kind`, 'kind 不在闭集内');
   if (!ENUMS.confidence.has(node.confidence)) issue('E_ENUM', `${path}.confidence`, 'confidence 不在闭集内');
@@ -87,6 +97,10 @@ function nodeCheck(node, index, groupIds, nodeIds, issue) {
       if (key in node && (!Array.isArray(node[key]) || node[key].some((v) => typeof v !== 'string'))) {
         issue('E_TYPE', `${path}.${key}`, '必须是字符串数组');
       }
+    }
+    unknown(node.stop, STOP_KEYS, `${path}.stop`, issue);
+    if (!isObject(node.stop) || !Array.isArray(node.stop.conditions) || node.stop.conditions.length === 0) {
+      issue('E_REQUIRED', `${path}.stop.conditions`, 'conditions 必填，至少一条：什么情况停');
     }
     if (!isObject(node.stop) || !isObject(node.stop.limits)) {
       issue('E_REQUIRED', `${path}.stop.limits`, 'limits 必填');
@@ -137,6 +151,9 @@ export function validate(data, lines = new Map()) {
   ]) {
     if (!(key in data)) issue('E_REQUIRED', key, `缺少必填项 ${key}`);
   }
+  for (const key of Object.keys(data)) {
+    if (!TOP_KEYS.has(key)) issue('E_UNKNOWN_FIELD', key, `不支持的字段 ${key}`);
+  }
   if ('schema_version' in data && data.schema_version !== 1) {
     issue('E_SCHEMA_VERSION', 'schema_version', 'schema_version 必须是 1');
   }
@@ -162,6 +179,7 @@ export function validate(data, lines = new Map()) {
       }
       if (!ENUMS.exit_kind.has(exit.kind)) issue('E_ENUM', `${p}.kind`, 'kind 错误');
       sourceCheck(exit.source, `${p}.source`, issue);
+      docOnlyCheck(exit, p, issue);
     });
   }
   const groupIds = new Set();
@@ -179,9 +197,7 @@ export function validate(data, lines = new Map()) {
   });
   nodes.forEach((node, i) => {
     nodeCheck(node, i, groupIds, nodeIds, issue);
-    if (node?.source?.doc_only === true && node.confidence === 'certain') {
-      issue('E_ENUM', `nodes[${i}].confidence`, '只有文档来源，不能标查实了');
-    }
+    docOnlyCheck(node, `nodes[${i}]`, issue);
   });
   const subagentReturns = new Set();
   nodes.forEach((node) => {
@@ -224,6 +240,7 @@ export function validate(data, lines = new Map()) {
       issue('E_ENUM', `${edgePath}.confidence`, 'confidence 错误');
     }
     sourceCheck(edge.source, `${edgePath}.source`, issue);
+    docOnlyCheck(edge, edgePath, issue);
     if (!Array.isArray(edge.payloads) || edge.payloads.length === 0) {
       issue('E_REQUIRED', `${edgePath}.payloads`, 'payloads 必须非空');
     } else {

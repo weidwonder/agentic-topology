@@ -315,7 +315,7 @@ function edgeDetail(edge) {
     `</div></details>${body}</div></section>`;
 }
 
-function folded(data) {
+function folded(data, warnings) {
   const summary = foldSummary(data);
   const foldedLayout = layoutFolded(data);
   const cards = [...foldedLayout.cards.values()].map((card) => {
@@ -337,6 +337,7 @@ function folded(data) {
     return `<path class="topo-edge ${categoryClass}${trustClass}" d="${esc(edge.d)}"/>` +
       `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">${value(edge.label)}</text>`;
   }).join('');
+  for (const warning of foldedLayout.warnings) warnings.push(warning);
   const innerCount = summary.cards.reduce((sum, card) => sum + card.innerEdgeKeys.length, 0);
   const stage = `<div class="topo-wrap"><div class="topo-stage" style="width:${foldedLayout.stage.w}px;` +
     `height:${foldedLayout.stage.h}px"><svg class="topo-edges" viewBox="0 0 ${foldedLayout.stage.w} ` +
@@ -352,7 +353,7 @@ function folded(data) {
 }
 
 /** 将拓扑数据、布局和富化结果渲染成单文件离线 HTML。 */
-export function renderHtml({ data, layout: pageLayout, enriched = {} }) {
+export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings = [] }) {
   const payload = {
     ...data,
     checklist: enriched.checklist || [],
@@ -366,7 +367,7 @@ export function renderHtml({ data, layout: pageLayout, enriched = {} }) {
     ` data-back>${esc(WORDS.labels.back)}</button><span class="topo-crumb">` +
     `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">${esc(WORDS.labels.detail)}</span></span></div>` +
     `<div class="screen">${details}${edgeDetails}</div></section>` +
-    `${folded(data)}</div>`;
+    `${folded(data, warnings)}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)
     .replace('<!--SLOT:DATA-->', json).replace('<!--SLOT:BODY-->', body).replace('<!--SLOT:SCRIPT-->', APP);
 }
