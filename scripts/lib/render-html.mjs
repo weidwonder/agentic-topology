@@ -37,7 +37,7 @@ const WORDS = {
     skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设',
     checklist: '这几处得你自己去核实',
     start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
-    concurrent: '同时干', items: '件', fan: '会派别人', in: '进', out: '出',
+    concurrent: '同时干', items: '件', fan: '会派别人', noFan: '不会派别人', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
     foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
     edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去',
@@ -269,9 +269,9 @@ function detail(data, node, enriched) {
     : '';
   const spawn = node.kind === 'agent' ? `<details class="topo-acc-item"><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.spawn)}<span class="topo-acc-mark">` +
-    `${node.spawns_subagents ? WORDS.labels.fan : `不${WORDS.labels.fan.slice(1)}`}</span></summary>` +
+    `${node.spawns_subagents ? WORDS.labels.fan : WORDS.labels.noFan}</span></summary>` +
     `<div class="topo-acc-body"><div class="stack-sm"><div class="text-sm">` +
-    `${node.spawns_subagents ? `${WORDS.labels.fan}干活` : `不会${WORDS.labels.fan.slice(1)}干活`}</div>` +
+    `${node.spawns_subagents ? `${WORDS.labels.fan}干活` : `${WORDS.labels.noFan}干活`}</div>` +
     `${subcards || `<span class="text-xs muted">${esc(WORDS.labels.none)}</span>`}</div></div></details>` : '';
   const sections = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.what)}<span class="topo-acc-mark">${flag(node.confidence)}</span></summary>` +

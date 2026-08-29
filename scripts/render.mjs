@@ -9,13 +9,8 @@ import { writeOutput } from './lib/write-output.mjs';
 import { resolveTarget } from './lib/nonclobber.mjs';
 import { isStale } from './lib/staleness.mjs';
 import { errorText } from './lib/error-text.mjs';
+import { textOutput, exitCodeFor } from './lib/cli-output.mjs';
 
-function textOutput(result) {
-  if (result.ok) return `✅ 描述合格：${result.stats.nodes} 个节点、${result.stats.edges} 条边\n`;
-  const lines = ['❌ 描述不合格，没有出图。下面的问题得先改好：', ''];
-  for (const error of result.errors) lines.push(`[${error.code}] ${error.path}`, `    ${error.message}`, '');
-  return `${lines.join('\n')}\n`;
-}
 
 const input = process.argv[2];
 const outputFlag = process.argv.indexOf('-o');
@@ -34,18 +29,13 @@ try {
     enriched.staleness = await isStale(parsed.data, { baseDir: path.dirname(input) });
     const pageLayout = layout(parsed.data);
     for (const warning of pageLayout.warnings) process.stderr.write(`${warning}\n`);
-    const html = renderHtml({
-      data: parsed.data,
-      layout: pageLayout,
-      folded: null,
-      enriched,
-    });
+    const html = renderHtml({ data: parsed.data, layout: pageLayout, enriched });
     const target = resolveTarget(output, force);
-    await writeOutput(target.path, html, parsed.data.source_project);
+    await writeOutput(target.path, html);
     if (target.renamedFrom) process.stderr.write(`已有一份，已另存为 ${target.path}\n`);
     process.stdout.write(`${target.path}\n`);
   }
 } catch (error) {
   process.stderr.write(errorText(error, input));
-  process.exitCode = error.code === 'E_SYNTAX' ? 3 : 1;
+  process.exitCode = exitCodeFor(error);
 }
