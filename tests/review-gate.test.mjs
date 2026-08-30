@@ -218,3 +218,19 @@ test('复杂键 `? ` MUST 被拒，且报出行号', () => {
   assert.equal(r.status, 3, `期望语法错退出码 3，实际 ${r.status}\n${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /:\d+/, '语法错没带行号');
 });
+
+// ---- 闭集清单：文档写的那张表 MUST 跟代码逐条对上 ---------------------------
+// D 轴查出的漂移就是这一类：文档承诺了什么，代码没做；或代码加了键，文档没跟上。
+test('validate.mjs 里每个闭集的每一个键，MUST 都在编排描述格式.md 里出现', () => {
+  const source = readFileSync('scripts/lib/validate.mjs', 'utf8');
+  const doc = readFileSync('references/编排描述格式.md', 'utf8');
+  const sets = [...source.matchAll(/const (\w*KEYS|edgeKeys|payloadKeys)\s*=\s*new Set\(\[([\s\S]*?)\]\)/g)];
+  assert.ok(sets.length >= 7, `只扫到 ${sets.length} 个闭集，正则可能失配了`);
+  const missing = [];
+  for (const [, name, body] of sets) {
+    for (const [, key] of body.matchAll(/'([a-z_]+)'/g)) {
+      if (!doc.includes(`\`${key}\``)) missing.push(`${name}.${key}`);
+    }
+  }
+  assert.deepEqual(missing, [], `这些闭集键在格式文档里查无此项：${missing.join('、')}`);
+});
