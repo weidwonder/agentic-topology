@@ -87,13 +87,25 @@ test('唯一写点断言本身抓得住（反向自检）', () => {
 // 项目二的分析对象恰好就是一个 skills 目录，产物里出现别的 skill 名字是在
 // 如实记录目标项目的事实——不写才是缺陷。所以这一目录 MUST 排除在本断言之外。
 test('交付物不引用任何其他 skill（AC-035）', () => {
-  const files = walk('.', (p) =>
-    !/^\.\/(docs|engineering-context|node_modules|tests\/tmp)/.test(p) &&
-    !/^(\.\/)?tests\/fixtures\/benchmarks/.test(p) &&
-    !/^tests\/tmp\//.test(p) &&
-    !p.includes('/.git/') && !p.includes('/.claude/') && !p.includes('/.agents/') &&
-    !p.includes('/.worktrees/') && p !== './CLAUDE.md' && p !== './AGENTS.md' &&
-    p !== './tests/acceptance.test.mjs' && p !== 'tests/acceptance.test.mjs');
+  // 按「路径段」排除，MUST NOT 用子串匹配。上一版写的是 p.includes('/.agents/')，
+  // 而 walk 顶层产出的是 './.agents'（没有尾斜杠）、子层经 path.join 归一化成
+  // '.agents/skills/…'（没有前导斜杠）——两头都对不上，这条排除从来没生效过。
+  // 在 worktree 里看着是绿的，只因为那些目录在 worktree 里不存在；一合进主工作树就红。
+  const EXCLUDED_DIRS = new Set([
+    'docs', 'engineering-context', 'node_modules', // 开发期文档与依赖，不是交付物
+    '.git', '.claude', '.agents', '.worktrees', '.codegraph', // 装在本仓的别的东西
+  ]);
+  // 对真实项目的分析产物：目标项目里出现别的 skill 名字是如实记录，不写才是缺陷。
+  const EXCLUDED_PATHS = new Set([
+    'CLAUDE.md', 'AGENTS.md', 'tests/acceptance.test.mjs', 'tests/tmp', 'tests/fixtures/benchmarks',
+  ]);
+  const segsOf = (p) => p.replace(/^\.\//, '').split('/');
+  const files = walk('.', (p) => {
+    const rel = p.replace(/^\.\//, '');
+    if (EXCLUDED_PATHS.has(rel)) return false;
+    return !segsOf(p).some((seg) => EXCLUDED_DIRS.has(seg));
+  });
+  assert.ok(files.length > 0, 'walk 一个文件都没扫到，过滤器可能把全仓都排除了');
   for (const f of files) {
     if (!/\.(md|mjs|js|css|html|json|yaml)$/.test(f)) continue;
     const t = readFileSync(f, 'utf8');
