@@ -118,8 +118,14 @@ npx agentic-topology install --dir path/to/skills/agentic-topology
 ```
 
 Only the deliverables are copied (`SKILL.md` + `references/` + `assets/` + `scripts/`) — no tests, no
-development docs. Reinstalling **wipes first**: leftover files from an older version would leave the
-agent reading two contradictory rulebooks at once.
+development docs.
+
+Reinstalling **wipes the target directory first** (leftover files from an older version would leave
+the agent reading two contradictory rulebooks at once). Because it wipes, four guards run before
+anything is deleted: the target is the current directory or an ancestor of it → refused; an ancestor
+of the skill's own source → refused; already exists, is non-empty, and holds no `SKILL.md` of this
+skill → refused **without deleting anything**, so you can confirm yourself. A slip like `--dir .`
+cannot wipe your working directory.
 
 **Requires** Node ≥ 18. **Zero npm dependencies.** No network access, and your code is never uploaded.
 
@@ -148,7 +154,7 @@ These aren't design aspirations. They're constraints with tests behind them:
 |---|---|
 | **Your project is only ever read** | `git status` is byte-identical before and after; the renderer **refuses** to write the diagram inside the analyzed project |
 | **Exactly one place writes files** | Only `scripts/lib/write-output.mjs` touches filesystem writes; asserted on both call shape and `node:fs` named imports |
-| **Same description, same diagram** | Byte-identical. No timestamps, no randomness, nothing depending on iteration order |
+| **Same description, same diagram** | Byte-identical when neither the description nor the analyzed project has changed. No timestamps, no randomness, nothing depending on iteration order. The one thing that does track outside change is the "this diagram may be stale" notice — it reads source-file mtimes, which is exactly what it's for |
 | **Guesses are never shown as facts** | The validator rejects "documentation-only source but marked verified"; the three confidence levels render as solid, dashed, and dimmed |
 | **Nothing is silently dropped** | Crowding is handled by folding and filtering; unfold restores every ID |
 | **No network** | Zero dependencies; the output is one HTML file that works offline |

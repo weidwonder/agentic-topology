@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { parseTopology } from './lib/parse.mjs';
+import { parseTopology, TopologyError } from './lib/parse.mjs';
 import { validate } from './lib/validate.mjs';
 import { layout } from './lib/layout.mjs';
 import { enrich } from './lib/enrich.mjs';
@@ -13,11 +13,15 @@ import { readInput, textOutput, exitCodeFor } from './lib/cli-output.mjs';
 
 const input = process.argv[2];
 const outputFlag = process.argv.indexOf('-o');
-const output = outputFlag >= 0
-  ? process.argv[outputFlag + 1]
-  : input.replace(/\.topology\.(yaml|json)$/, '.topology.html');
 const force = process.argv.includes('--force');
 try {
+  // 输出路径要由输入路径推导，所以这一步 MUST 在 try 里面：没给路径时它会炸，
+  // 而那是使用者的输入错误，该走和 validate.mjs 一样的 E_FILE + 退出码 3，
+  // MUST NOT 甩一个 Node 原生 TypeError 栈出去（那会被当成程序自身的 bug）。
+  if (!input) throw new TopologyError('没有给描述文件路径', 'E_FILE');
+  const output = outputFlag >= 0
+    ? process.argv[outputFlag + 1]
+    : input.replace(/\.topology\.(yaml|json)$/, '.topology.html');
   const parsed = parseTopology(await readInput(input), input);
   const result = validate(parsed.data, parsed.lines);
   if (!result.ok) {
