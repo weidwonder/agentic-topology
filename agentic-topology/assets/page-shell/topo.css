@@ -1,8 +1,11 @@
 .topo-wrap { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); overflow: auto; padding: 14px; }
 .topo-stage { position: relative; min-width: 320px; }
-.topo-frame { position: absolute; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--muted); }
+/* 层叠顺序是硬要求：分组框(0) < 连线与标注(1) < 节点卡片(2)。
+   三者都是 position:absolute，不写 z-index 就按 DOM 顺序叠——分组框排在 svg 之后，
+   会把连线标注整个盖住（FR-039 要求重叠时仍完整可辨）。 */
+.topo-frame { z-index: 0; position: absolute; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--muted); }
 .topo-frame-label { position: absolute; top: -10px; left: 12px; padding: 0 8px; background: var(--card); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
-.topo-edges { position: absolute; inset: 0; pointer-events: none; }
+.topo-edges { z-index: 1; position: absolute; inset: 0; pointer-events: none; }
 .topo-edge { fill: none; stroke-width: 1.6; }
 .is-hidden { display: none !important; }
 .topo-edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
@@ -11,7 +14,7 @@
 .topo-edge.is-back { stroke: var(--destructive); }
 .topo-edge.is-inferred, .topo-edge.is-unread { stroke-dasharray: 5 4; }
 .topo-elabel { font-size: 10.5px; fill: var(--muted-foreground); paint-order: stroke fill; stroke: var(--card); stroke-width: 3.5px; stroke-linejoin: round; }
-.topo-node { position: absolute; width: 184px; box-sizing: border-box; padding: 8px 10px; background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
+.topo-node { z-index: 2; position: absolute; width: 184px; box-sizing: border-box; padding: 8px 10px; background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
 .topo-node.is-agent { background: color-mix(in oklab, var(--primary) 10%, var(--card)); border-radius: 14px; }
 .topo-node.is-guess { border-style: dashed; border-color: var(--warning); background: color-mix(in oklab, var(--warning) 10%, var(--card)); }
 .topo-node-top { display: flex; align-items: center; gap: 6px; }
@@ -20,7 +23,7 @@
 .topo-node-desc { font-size: 10.5px; color: var(--muted-foreground); line-height: 1.4; margin-top: 3px; }
 .topo-node-kind { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; background: var(--card); color: var(--muted-foreground); border: 1px solid var(--border); }
 .topo-node-go { margin-left: auto; display: inline-flex; padding: 1px 5px; border-radius: 999px; font-size: 10px; background: var(--primary); color: var(--primary-foreground); }
-.topo-pill { position: absolute; box-sizing: border-box; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--primary); background: var(--card); font-size: 11px; color: var(--primary); text-align: center; }
+.topo-pill { z-index: 2; position: absolute; box-sizing: border-box; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--primary); background: var(--card); font-size: 11px; color: var(--primary); text-align: center; }
 .topo-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 11px; color: var(--muted-foreground); }
 .topo-filters { display: flex; flex-wrap: wrap; gap: 12px; }
 .topo-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -49,7 +52,7 @@
 .topo-src { border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--muted); overflow: hidden; }
 .topo-line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 1px 8px; font-size: 11px; }
 .topo-line.is-hit { background: var(--accent); }
-.topo-fold { position: absolute; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in oklab, var(--primary) 5%, var(--card)); box-shadow: 0 1px 3px rgb(0 0 0 / 0.1); }
+.topo-fold { z-index: 2; position: absolute; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in oklab, var(--primary) 5%, var(--card)); box-shadow: 0 1px 3px rgb(0 0 0 / 0.1); }
 .topo-fold-name { font-size: 13px; font-weight: 600; }
 .topo-fold-count { font-size: 11px; color: var(--muted-foreground); }
 .topo-flag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }

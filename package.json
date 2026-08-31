@@ -1,8 +1,6 @@
 {
-  "name": "agentic-topology",
-  "version": "0.1.0",
+  "name": "agentic-topology-repo",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test" },
-  "dependencies": {}
+  "scripts": { "test": "npm test --prefix agentic-topology" }
 }
