@@ -8,7 +8,7 @@ Point it at a repo and say "draw this project's orchestration." It reads the sou
 **which AIs exist, what tools each one has, what the deterministic code between them does, who calls
 whom, and what gets handed over** — then renders **a single HTML file that opens offline**.
 
-![Orchestration overview](./docs/images/overview.png)
+![Orchestration overview](./assets/images/overview.png)
 
 That screenshot is real output — read from an internal-audit module (1,500 lines of TypeScript):
 10 boxes, 14 connections. The AI in the dashed orange box is marked *guessed*, and the top-right
@@ -17,11 +17,11 @@ badge says *16 things you need to verify yourself*.
 
 Click any box for the full detail — **every line carries a `file:line` citation**:
 
-![Node detail](./docs/images/detail.png)
+![Node detail](./assets/images/detail.png)
 
 Too many boxes? Collapse them by group. Nothing is dropped when you do:
 
-![Folded view](./docs/images/folded.png)
+![Folded view](./assets/images/folded.png)
 
 ---
 
@@ -187,14 +187,20 @@ filtering by confidence and type, node and edge drill-down, prompt ranges expand
 verify-this checklist, non-clobbering regeneration, staleness notices.
 
 **Missing**: the ship line requires **zero missed agent nodes and zero missed call edges across 3
-real projects**. It is **not met** — only 2 benchmark projects are valid, and even those two zeros
-are "measured as zero," not "established as zero," because the granularity ledger is absent. Each
-outstanding item is written up under 〈准出线欠账〉 in
-[`docs/report/测试场景覆盖度.md`](./docs/report/测试场景覆盖度.md).
+real projects**. It is **not met**. Three things are outstanding:
+
+1. **A third benchmark project.** The one we ran excluded the very package that assembles the system
+   prompt — while "which system prompt is assembled" is exactly the criterion for what counts as an
+   Agent. On top of that, one of this skill's own mandatory-load references uses that project as a
+   worked example and states the answer, so the blind test could not be blind. That round is void.
+2. **A granularity ledger for the first two projects.** The "zero missed edges" metric leans on
+   "a merge into a node MUST be recorded" — that record is its only anti-gaming check. Without it,
+   coarsening the cut until transfers sink inside nodes scores a zero while information is genuinely
+   lost. So those two zeros are "measured as zero," not "established as zero."
+3. No single round has yet satisfied all three at once: correct scope, complete ledger, no leak.
 
 **Known gaps**: runtime tracing (it reads static source, so branches decided at runtime are
 invisible), prompt redaction on export, and no way to express "a phase inside a single session."
-All tracked in [`docs/TODO.md`](./docs/TODO.md).
 
 ---
 

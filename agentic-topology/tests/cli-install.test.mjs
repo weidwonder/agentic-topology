@@ -123,7 +123,7 @@ test('两份 README 互相引用，且所有相对链接与图片都指得到', 
 test('README 引用的三张图都在，且不是空文件', () => {
   const repoRoot = path.resolve('..');
   for (const name of ['overview.png', 'detail.png', 'folded.png']) {
-    const file = path.join(repoRoot, 'docs/images', name);
+    const file = path.join(repoRoot, 'assets/images', name);
     assert.ok(existsSync(file), `缺图片 ${name}`);
     assert.ok(readFileSync(file).length > 10000, `${name} 太小了，可能是坏图`);
   }

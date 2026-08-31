@@ -11,3 +11,8 @@
 # ai-dev-workflow worktrees
 /.worktrees/
 agentic-topology/tests/tmp/
+
+# 开发期产物与本地上下文——留在本地，不进仓库
+/.claude/
+/engineering-context/
+/docs/
