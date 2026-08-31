@@ -294,7 +294,11 @@ export function layout(data) {
     });
     columnX += groupWidth + M.COL_GAP;
   }
-  const obstacles = [...nodes.values(), ...groupById.values()];
+  // 标注要躲的是**看不清**：节点卡片会把它盖住，别的标注会跟它糊在一起。
+  // 分组框 MUST NOT 算障碍物——堆内的边整条线都在自己那个框里，把框当障碍就无处可放，
+  // 结果是每条标注都退让失败、退回原点，反而比不退让更糟。分组框在最底层，
+  // 标注压在它上面照样完整可辨（CSS 的 z-index + 标注自带描边光晕）。
+  const obstacles = [...nodes.values()];
   const edges = [];
   for (const edge of sourceEdges) {
     const from = nodes.get(edge.from);

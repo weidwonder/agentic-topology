@@ -10,4 +10,4 @@
 
 # ai-dev-workflow worktrees
 /.worktrees/
-tests/tmp/
+agentic-topology/tests/tmp/
