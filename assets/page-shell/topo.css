@@ -1,0 +1,63 @@
+.topo-wrap { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); overflow: auto; padding: 14px; }
+.topo-stage { position: relative; min-width: 320px; }
+.topo-frame { position: absolute; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--muted); }
+.topo-frame-label { position: absolute; top: -10px; left: 12px; padding: 0 8px; background: var(--card); color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.topo-edges { position: absolute; inset: 0; pointer-events: none; }
+.topo-edge { fill: none; stroke-width: 1.6; }
+.is-hidden { display: none !important; }
+.topo-edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
+.topo-edge.is-main { stroke: var(--primary); }
+.topo-edge.is-ok { stroke: var(--success); }
+.topo-edge.is-back { stroke: var(--destructive); }
+.topo-edge.is-inferred, .topo-edge.is-unread { stroke-dasharray: 5 4; }
+.topo-elabel { font-size: 10.5px; fill: var(--muted-foreground); paint-order: stroke fill; stroke: var(--card); stroke-width: 3.5px; stroke-linejoin: round; }
+.topo-node { position: absolute; width: 184px; box-sizing: border-box; padding: 8px 10px; background: var(--card); border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
+.topo-node.is-agent { background: color-mix(in oklab, var(--primary) 10%, var(--card)); border-radius: 14px; }
+.topo-node.is-guess { border-style: dashed; border-color: var(--warning); background: color-mix(in oklab, var(--warning) 10%, var(--card)); }
+.topo-node-top { display: flex; align-items: center; gap: 6px; }
+.topo-node-id { font-size: 10px; color: var(--muted-foreground); }
+.topo-node-name { font-size: 12px; font-weight: 600; line-height: 1.35; margin-top: 3px; }
+.topo-node-desc { font-size: 10.5px; color: var(--muted-foreground); line-height: 1.4; margin-top: 3px; }
+.topo-node-kind { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; background: var(--card); color: var(--muted-foreground); border: 1px solid var(--border); }
+.topo-node-go { margin-left: auto; display: inline-flex; padding: 1px 5px; border-radius: 999px; font-size: 10px; background: var(--primary); color: var(--primary-foreground); }
+.topo-pill { position: absolute; box-sizing: border-box; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--primary); background: var(--card); font-size: 11px; color: var(--primary); text-align: center; }
+.topo-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 11px; color: var(--muted-foreground); }
+.topo-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.topo-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.topo-filters legend { padding: 0 4px; color: var(--muted-foreground); font-size: 11px; }
+.topo-filter-option { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+.topo-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.topo-swatch { width: 20px; height: 0; border-top: 2px solid var(--primary); }
+.topo-swatch.is-ok { border-top-color: var(--success); }
+.topo-swatch.is-back { border-top-color: var(--destructive); }
+.topo-crumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+.topo-crumb-now { color: var(--foreground); font-weight: 600; }
+.topo-chain { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 0; }
+.topo-chain-cell { flex: 0 0 auto; width: 184px; padding: 8px 10px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--card); }
+.topo-chain-cell.is-agent { background: color-mix(in oklab, var(--primary) 10%, var(--card)); border-radius: 14px; }
+.topo-chain-cell.is-focus { box-shadow: 0 0 0 2px var(--ring); }
+.topo-chain-link { flex: 0 0 auto; align-self: center; width: 132px; padding: 0 8px; text-align: center; }
+.topo-chain-arrow { display: block; width: 100%; height: 0; margin: 4px 0; border-top: 1.6px solid var(--primary); }
+.topo-chain-cap { font-size: 10.5px; color: var(--muted-foreground); }
+.topo-acc { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); }
+.topo-acc-item + .topo-acc-item { border-top: 1px solid var(--border); }
+.topo-acc-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; }
+.topo-acc-head::-webkit-details-marker { display: none; }
+.topo-acc-mark { margin-left: auto; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
+.topo-acc-item[open] > .topo-acc-head { background: var(--muted); }
+.topo-acc-body { padding: 4px 14px 14px; }
+.topo-src { border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--muted); overflow: hidden; }
+.topo-line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 1px 8px; font-size: 11px; }
+.topo-line.is-hit { background: var(--accent); }
+.topo-fold { position: absolute; box-sizing: border-box; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in oklab, var(--primary) 5%, var(--card)); box-shadow: 0 1px 3px rgb(0 0 0 / 0.1); }
+.topo-fold-name { font-size: 13px; font-weight: 600; }
+.topo-fold-count { font-size: 11px; color: var(--muted-foreground); }
+.topo-flag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.topo-flag.is-sure { background: color-mix(in oklab, var(--success) 16%, var(--card)); color: var(--success); }
+.topo-flag.is-guess { background: color-mix(in oklab, var(--warning) 26%, var(--card)); color: var(--warning-foreground); }
+.topo-flag.is-unknown { background: var(--muted); color: var(--muted-foreground); border: 1px dashed var(--muted-foreground); }
+.topo-marks { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+.topo-mark { display: inline-flex; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); font-size: 9.5px; }
+.topo-mark.is-conc { border-color: var(--success); color: var(--success); }
+.topo-mark.is-fan { border-color: var(--primary); color: var(--primary); }
+.topo-sub { border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: calc(var(--radius) - 4px); padding: 10px 12px; background: color-mix(in oklab, var(--primary) 4%, var(--card)); }

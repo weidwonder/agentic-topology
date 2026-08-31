@@ -1,0 +1,528 @@
+schema_version: 1
+source_project: "~/projects/aiudit_platform"
+generated_at: "2026-08-26"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "用户 Page3 编辑「审计重点」→ IPC audit:start → 材料索引就绪校验（或 audit:skip-indexing）→ engineHost.start + ensureAgentFsMcp → runInternalControlAudit"
+  exits:
+    - name: "成功"
+      kind: normal
+      condition: "汇总对账通过，报告落盘并广播完成"
+      source:
+        refs:
+          - "workflow.ts:441-447"
+        confirmed_at: "2026-08-26"
+    - name: "规划失败"
+      kind: abnormal
+      condition: "台账连续 maxPlanAttempts(2) 次被六条硬校验判非法"
+      source:
+        refs:
+          - "workflow.ts:586"
+        confirmed_at: "2026-08-26"
+    - name: "覆盖率失败"
+      kind: abnormal
+      condition: "台账 N 项与回执数不等，指名方面·阶段(itemId)"
+      source:
+        refs:
+          - "reconcile.ts:62-76"
+        confirmed_at: "2026-08-26"
+    - name: "模型配置类错误"
+      kind: abnormal
+      condition: "isLlmConfigurationRetryError，置 fatalModelError 并取消整个 task"
+      source:
+        refs:
+          - "workflow.ts:376-379"
+        confirmed_at: "2026-08-26"
+    - name: "用户取消"
+      kind: cancelled
+      condition: "audit:cancel 触发各段检查点的 throwIfCancelled"
+      source:
+        refs:
+          - "ipc.ts:383"
+        confirmed_at: "2026-08-26"
+
+groups:
+  - id: g1
+    name: "定计划"
+    order: 1
+  - id: g2
+    name: "分头干活"
+    order: 2
+  - id: g3
+    name: "收尾"
+    order: 3
+
+nodes:
+  - id: N1
+    name: "材料清册与指纹"
+    kind: program
+    responsibility: "遍历三目录，算内容指纹、稳定排序、算材料集合指纹与审计重点指纹"
+    inputs: "三个材料目录与审计重点"
+    outputs: "MaterialEntry[]、材料集合指纹、审计重点指纹"
+    purpose: "为台账复用与范围校验提供确定性基准"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "material-inventory.ts:102-137"
+      confirmed_at: "2026-08-26"
+  - id: N2
+    name: "台账复用查找"
+    kind: program
+    responsibility: "四元复用键比对历史台账，命中整份沿用"
+    inputs: "材料集合指纹、审计重点指纹、路由与一致性信息"
+    outputs: "沿用的 AuditLedger 或复用未命中结果"
+    purpose: "冻结台账使二次运行不再重新规划"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "ledger-store.ts:45-67"
+      confirmed_at: "2026-08-26"
+  - id: N3
+    name: "材料分组与规划提示词构建"
+    kind: program
+    responsibility: "5000+ 份扁平材料收敛成目录级材料组（不下发指纹）；写 plan-input.json"
+    inputs: "材料清册、词表、审计重点、searchPolicy、单项选组上限"
+    outputs: "plan-input.json"
+    purpose: "上下文瘦身，防规划者在 1.37MB 清单下编造指纹"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "prompts.ts:80-110"
+      confirmed_at: "2026-08-26"
+  - id: N4
+    name: "规划 Agent「内控审计规划师」"
+    kind: agent
+    responsibility: "审计重点落到 18 方面 × 2 阶段，选材料组，写 ledger.draft.json；拿不到材料正文"
+    inputs: "plan-input.json、首轮用户消息、上轮结构化拒绝原因"
+    outputs: "ledger.draft.json 与会话 finalText"
+    group: g1
+    concurrency:
+      default: 1
+    system_prompt:
+      file: "assets/prompts/internal-control-planner.v2.md"
+      from: 1
+      to: 62
+    tools:
+      - read
+      - write
+      - edit
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "写完 ledger.draft.json 并结束会话"
+        - "整段重试上限 2 次"
+      limits:
+        steps: "会话轮次上限 80（注释自陈实测不约束工具循环，真实语义未读出）"
+        time: not_set
+        cost: not_set
+        consecutive_failures: "整段重试 2 次"
+    spawns_subagents: false
+    confidence: certain
+    field_confidence:
+      stop.limits.steps: unread
+    source:
+      refs:
+        - "engine-host.ts:1169-1181"
+      confirmed_at: "2026-08-26"
+  - id: N5
+    name: "台账校验归一与落盘"
+    kind: program
+    responsibility: "六条硬校验；组号展开成指纹；算任务项 ID；补未纳入审查的方面；落盘 ledger.json"
+    inputs: "ledger.draft.json"
+    outputs: "AuditLedger、ledger.json 或六条结构化错误串"
+    purpose: "作为覆盖率对账的甲方，任一校验命中即整份判非法"
+    group: g1
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "ledger.ts:72-122"
+      confirmed_at: "2026-08-26"
+  - id: N6
+    name: "工作项切分与滑动窗口调度"
+    kind: program
+    responsibility: "同方面两阶段合成一工作项；滑窗并发；断点续跑；卡死看门狗"
+    inputs: "AuditLedger、ledger.json"
+    outputs: "InternalControlWorkItem、WorkItemOutcome、补交提醒或取消信号"
+    purpose: "控制并发、断点续跑，并在卡住时中止单项"
+    group: g2
+    concurrency:
+      default: 3
+      max: 4
+      note: "网关天花板 4"
+    confidence: certain
+    source:
+      refs:
+        - "dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"
+  - id: N7
+    name: "判定工作项提示词构建"
+    kind: program
+    responsibility: "写 work-item.json；并入国家规范；解析允许引用范围；建路径白名单；逐字拼入 rubric"
+    inputs: "InternalControlWorkItem、对应台账项、收窄投喂材料、全量清册"
+    outputs: "work-item.json、首轮消息与判定提示词"
+    purpose: "完成格式转换、范围收窄与判据注入"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "prompts.ts:184-260"
+        - "prompts.ts:354"
+      confirmed_at: "2026-08-26"
+  - id: N8
+    name: "判定执行者「内控审计判定师」"
+    kind: agent
+    responsibility: "就本工作项 1–2 个任务项给结论（通过/问题/存疑）与理由、findings；不汇总不写报告不扩范围"
+    inputs: "work-item.json、首轮消息、severity-rubric.v2.md、上轮 validationErrors、receiptTicketUrl"
+    outputs: "receipts 数组与每条 finding 的引用"
+    group: g2
+    concurrency:
+      default: 1
+    system_prompt:
+      file: "assets/prompts/internal-control-judge.v9.md"
+      from: 1
+      to: 192
+    tools:
+      - read
+      - grep
+      - todo_write
+    mcp:
+      - agent_fs
+      - ic_receipt
+    skills: []
+    stop:
+      conditions:
+        - "主动调用 submit_receipt 提交回执"
+        - "取证步数撞 400、同 attempt 退回撞 4 次或工作项重试达到 3 次"
+        - "15 分钟无进展时由外层中止"
+      limits:
+        steps: "取证步数预算 400 次工具调用/attempt；maxTurns=80 的真实语义未读出"
+        time: "15 分钟无进展"
+        cost: not_set
+        consecutive_failures: "同 attempt 内被闸门退回 4 次"
+    spawns_subagents: false
+    confidence: certain
+    field_confidence:
+      stop.limits.steps: unread
+    source:
+      refs:
+        - "engine-host.ts:1185-1197"
+      confirmed_at: "2026-08-26"
+  - id: N9
+    name: "回执三道闸门"
+    kind: program
+    responsibility: "依次执行契约层、检索层、引文层校验，接收合格回执或退回错误"
+    inputs: "receipts、材料范围、允许引用范围"
+    outputs: "accepted 回执、search_evidence、validationErrors"
+    purpose: "把材料只读、范围不扩大、引文必落位变成代码边界"
+    group: g2
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "workflow.ts:784-918"
+      confirmed_at: "2026-08-26"
+  - id: N10
+    name: "汇总对账与报告渲染"
+    kind: program
+    responsibility: "台账↔回执逐项对账；去重、计数重算、重新编号；概要三段纯程序渲染"
+    inputs: "全部 WorkItemOutcome、失败工作项错误明细、AuditLedger、indexingMode、embed"
+    outputs: "报告与完成广播，或 InternalControlCoverageError"
+    purpose: "覆盖率不由模型自述，并且不下总体健全性定性"
+    group: g3
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "reconcile.ts:45-140"
+      confirmed_at: "2026-08-26"
+
+edges:
+  - from: N1
+    to: N2
+    category: normal
+    trigger: "每轮必经"
+    carrier: bundle
+    payloads:
+      - content: "MaterialEntry[]（文件/来源/指纹/字节数）"
+        produced_at: "N1 遍历三目录并计算指纹时"
+        delivered_at: "N1 完成后交给 N2"
+      - content: "复用键四元组"
+        produced_at: "N1 计算材料与审计重点指纹时"
+        delivered_at: "N1 完成后交给 N2"
+    concurrency_control: "不会发生（单线顺序执行）"
+    confidence: certain
+    source:
+      refs:
+        - "workflow.ts:210-224"
+      confirmed_at: "2026-08-26"
+  - from: N2
+    to: N6
+    category: pass_or_skip
+    trigger: "四元复用键全等命中"
+    carrier: bundle
+    payloads:
+      - content: "沿用的 AuditLedger（改 taskId、source:reused）"
+        produced_at: "N2 命中历史台账时"
+        delivered_at: "命中后交给 N6"
+      - content: "进度文案「已沿用上次台账，跳过规划」"
+        produced_at: "N2 命中历史台账时"
+        delivered_at: "命中后随事件交给 N6"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "ledger-store.ts:45-67"
+      confirmed_at: "2026-08-26"
+  - from: N2
+    to: N3
+    category: normal
+    trigger: "复用未命中"
+    carrier: bundle
+    payloads:
+      - content: "材料清册、词表、审计重点、searchPolicy、单项选组上限"
+        produced_at: "N2 判定复用未命中时"
+        delivered_at: "N2 完成后交给 N3"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "prompts.ts:80-110"
+      confirmed_at: "2026-08-26"
+  - from: N3
+    to: N4
+    category: normal
+    trigger: "每次规划 attempt（≤2）"
+    carrier: file
+    payloads:
+      - content: "plan-input.json（材料组视图/18 项词表含风险点/审计重点/judgeCapability）"
+        produced_at: "N3 构建规划输入时"
+        delivered_at: "规划会话首轮消息中"
+      - content: "首轮用户消息"
+        produced_at: "N3 组装规划提示词时"
+        delivered_at: "每次规划 attempt 开始时"
+      - content: "上轮结构化拒绝原因（重试轮）"
+        produced_at: "N5 返回校验错误时"
+        delivered_at: "下一次规划 attempt 的输入中"
+    concurrency_control: "排队（规划 attempt 串行）"
+    confidence: certain
+    source:
+      refs:
+        - "prompts.ts:80-183"
+      confirmed_at: "2026-08-26"
+  - from: N4
+    to: N5
+    category: normal
+    trigger: "规划会话结束"
+    carrier: file
+    payloads:
+      - content: "ledger.draft.json"
+        produced_at: "规划 Agent 写出草稿时"
+        delivered_at: "规划会话结束后交给 N5"
+      - content: "会话 finalText（截前 120 字进日志）"
+        produced_at: "规划会话结束时"
+        delivered_at: "N5 开始校验时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "engine-host.ts:1169-1181"
+      confirmed_at: "2026-08-26"
+  - from: N5
+    to: N3
+    category: reject_or_halt
+    trigger: "校验不通过且 attempt < 2"
+    carrier: bundle
+    payloads:
+      - content: "六条硬校验产生的结构化错误串"
+        produced_at: "N5 校验 ledger.draft.json 失败时"
+        delivered_at: "下一轮 plan-input.json.previousRejectionErrors 中"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "ledger.ts:72-122"
+      confirmed_at: "2026-08-26"
+  - from: N5
+    to: N6
+    category: normal
+    trigger: "台账校验通过"
+    carrier: bundle
+    payloads:
+      - content: "AuditLedger（任务项 ID、uncoveredAspects、materials 快照）"
+        produced_at: "N5 归一并补全台账时"
+        delivered_at: "校验通过后交给 N6"
+      - content: "落盘 ledger.json"
+        produced_at: "N5 校验通过并落盘时"
+        delivered_at: "N6 开始调度时读取"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "ledger.ts:72-122"
+      confirmed_at: "2026-08-26"
+  - from: N6
+    to: N7
+    category: normal
+    trigger: "滑窗有空位且未被断点续跑沿用"
+    carrier: bundle
+    payloads:
+      - content: "InternalControlWorkItem"
+        produced_at: "N6 切分台账工作项时"
+        delivered_at: "N7 构建提示词时"
+      - content: "对应台账项"
+        produced_at: "N6 选取工作项时"
+        delivered_at: "N7 构建提示词时"
+      - content: "收窄投喂材料与无条件并入的国家规范"
+        produced_at: "N6 准备工作项上下文时"
+        delivered_at: "N7 组装 work-item.json 时"
+      - content: "全量清册（仅供范围校验）"
+        produced_at: "N6 准备范围校验数据时"
+        delivered_at: "N7 生成路径白名单时"
+    concurrency_control: "滑动窗口最多并发 3，网关天花板 4"
+    confidence: certain
+    source:
+      refs:
+        - "dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"
+  - from: N7
+    to: N8
+    category: normal
+    trigger: "每次判定 attempt（≤3）"
+    carrier: prompt
+    payloads:
+      - content: "work-item.json"
+        produced_at: "N7 写入工作项文件时"
+        delivered_at: "N8 会话首轮读取时"
+      - content: "首轮消息（todo 单线索纪律/dir_tree 全库视野指令）"
+        produced_at: "N7 组装判定消息时"
+        delivered_at: "N8 每次 attempt 开始时"
+      - content: "severity-rubric.v2.md 全文逐字"
+        produced_at: "N7 加载 rubric 时"
+        delivered_at: "N8 首轮提示词中"
+      - content: "上轮 validationErrors（重试轮）"
+        produced_at: "N9 退回错误时"
+        delivered_at: "下一次 N8 attempt 的消息中"
+      - content: "receiptTicketUrl 一次性提交凭据"
+        produced_at: "N7 创建回执票据时"
+        delivered_at: "N8 当前会话中"
+    concurrency_control: "每个工作项独立会话"
+    confidence: certain
+    source:
+      refs:
+        - "prompts.ts:184-260"
+        - "prompts.ts:354"
+      confirmed_at: "2026-08-26"
+  - from: N8
+    to: N9
+    category: normal
+    trigger: "执行者主动调用 submit_receipt"
+    carrier: event
+    payloads:
+      - content: "receipts:[{itemId, conclusion, reason, findings[]}]，每条 finding 至少一条引用"
+        produced_at: "N8 完成取证并提交回执时"
+        delivered_at: "submit_receipt MCP 调用到达 N9 时"
+    concurrency_control: "同一工作项按会话顺序提交"
+    confidence: certain
+    source:
+      refs:
+        - "workflow.ts:784-918"
+      confirmed_at: "2026-08-26"
+  - from: N9
+    to: N8
+    category: reject_or_halt
+    trigger: "任一闸门不通过（退回<4次）或已 accepted 后重复提交"
+    carrier: event
+    screening: "范围越界、引文错位、未列国家规范依据、检索不足均须逐条返回"
+    payloads:
+      - content: "逐条校验错误"
+        produced_at: "N9 三道闸门校验失败时"
+        delivered_at: "MCP isError 在同一会话当场返回"
+      - content: "回执已接收，无需重复提交"
+        produced_at: "N9 已 accepted 后再次收到提交时"
+        delivered_at: "MCP isError 在同一会话当场返回"
+    concurrency_control: "同一 attempt 内最多退回 4 次"
+    confidence: certain
+    source:
+      refs:
+        - "workflow.ts:784-918"
+      confirmed_at: "2026-08-26"
+  - from: N9
+    to: N6
+    category: normal
+    trigger: "三道闸门全通过"
+    carrier: bundle
+    payloads:
+      - content: "accepted 回执数组"
+        produced_at: "N9 三道闸门全部通过时"
+        delivered_at: "作为 WorkItemOutcome 返回 N6"
+      - content: "程序回填的 search_evidence"
+        produced_at: "N9 检索闸门完成时"
+        delivered_at: "作为 WorkItemOutcome 返回 N6"
+      - content: "被清空的 position/locator 与 search_evidence_unverified 标记"
+        produced_at: "N9 引文闸门归一化时"
+        delivered_at: "作为 WorkItemOutcome 返回 N6"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "workflow.ts:784-918"
+      confirmed_at: "2026-08-26"
+  - from: N6
+    to: N8
+    category: reject_or_halt
+    trigger: "补交提醒 / 取消信号"
+    carrier: other
+    carrier_note: "提示词 / 事件"
+    payloads:
+      - content: "补交提醒：不要再取证，直接用已有结论调一次 submit_receipt"
+        produced_at: "会话正常结束但一次未提交、未撞步数预算且有 conversationId 时"
+        delivered_at: "复用同一 conversationId 同会话追加一轮，只追一次"
+      - content: "取消信号 cancelIsolatedTask"
+        produced_at: "取证步数撞 400、同 attempt 退回撞 4 次或 15 分钟无进展时"
+        delivered_at: "N6 取消对应 N8 会话时"
+    concurrency_control: "补交只追一次；取消信号立即生效"
+    confidence: certain
+    source:
+      refs:
+        - "dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"
+  - from: N6
+    to: N10
+    category: normal
+    trigger: "滑窗排干且无 fatalModelError"
+    carrier: bundle
+    payloads:
+      - content: "全部 WorkItemOutcome 展平后的 receipts"
+        produced_at: "N6 排干所有工作项时"
+        delivered_at: "汇总开始时交给 N10"
+      - content: "失败工作项错误明细"
+        produced_at: "N6 收集失败工作项时"
+        delivered_at: "汇总开始时交给 N10"
+      - content: "AuditLedger/indexingMode/embed"
+        produced_at: "N6 汇总调度上下文时"
+        delivered_at: "汇总开始时交给 N10"
+    concurrency_control: "合并"
+    confidence: certain
+    source:
+      refs:
+        - "dispatch.ts:19-71"
+      confirmed_at: "2026-08-26"

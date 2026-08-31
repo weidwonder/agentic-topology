@@ -1,0 +1,472 @@
+# multica 后端守护进程(daemon)"任务从被创建到产出结果"这一条链路。
+# 分批读源码、边读边落盘，详见每个节点/边的 source.refs 与文末核对清单。
+# analysis_complete 在全部批次读完、自查清单过完之前一律是 false。
+
+schema_version: 1
+source_project: "/Users/weidwonder/projects/multica"
+generated_at: "2026-08-28"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: |
+    daemon 是一个常驻进程。Daemon.Run(ctx)（daemon.go:1657）启动多个后台循环，
+    其中 pollLoop（daemon.go:4292）唤醒 runBatchPoller（daemon.go:4350）持续向
+    Multica 后端服务器（SaaS，本次范围外）批量申领处于 dispatched 状态的任务
+    （ClaimTasksWSFirst，wsrpc.go:315，回退到 client.go:236 的 HTTP 批量申领）。
+    每领到一个任务即分配一个并发槽位、起一个 goroutine 调用 handleTask
+    （daemon.go:4613），进入这条链路（对应节点 POLL_DISPATCH）。除了
+    ClaimTasksWSFirst 的主动批量申领，wakeup.go 里还有一条 WebSocket 推送
+    通道（server 主动告知"这些 runtime 有新任务了"）会把同一个 wakeup
+    channel 提前敲响，催 POLL_DISPATCH 提前再申领一轮——它不携带任务本体，
+    只是把"该再问一次了"这件事说得更快，因此不单独成节点/边，记在这里。
+
+    本次按任务要求只画"一个任务从被申领到产出结果"这一条链路，以下按抽取
+    纪律 §6 逐条列出主动排除的部分、排除依据：
+    1. server/pkg/agent/ 目录下除 agent.go / models.go / stream_scanner.go /
+       thinking.go / claude.go / codex.go 外的其余 17 家 CLI 适配器实现
+       文件（codebuddy.go、copilot.go、opencode.go、deveco.go、
+       openclaw.go、hermes.go、pi.go、cursor.go、kimi.go、reasonix.go、
+       kiro.go、antigravity.go、qoder.go、traecli.go、grok.go、qwen.go、
+       qwenpaw.go 等）——任务书明确排除，只留 claude / codex 两个 provider
+       样本挂在 AGENT_BACKEND 节点上。
+    2. server/internal/daemon/execenv/ 与 server/internal/daemon/repocache/
+       两个子目录整体——任务书明确排除。后果是：执行环境到底怎么搭起来的
+       （工作目录准备/复用、MCP 配置文件如何落盘、CODEX_HOME 布局、仓库
+       worktree checkout）、以及事实上承担了"系统提示词"角色的运行时简报
+       （CLAUDE.md / AGENTS.md 等文件）具体写了什么，本次读不到，已在
+       RUN_TASK 与 AGENT_BACKEND 的 responsibility 里点出这一断层，并把
+       AGENT_BACKEND.system_prompt 定位到 prompt.go 里"精简、不含这部分"
+       的说明段落，而不是假装能看到运行时简报本身。
+    3. daemon.go 里与"一个任务从申领到出结果"不相交的后台循环/处理器：
+       New/Run 启动的 workspaceSyncLoop、heartbeatLoop、tokenRenewalLoop、
+       agentDiscoveryLoop（agents_probe.go / agents_refresh.go：CLI 版本
+       探测与 runtime 注册收敛）、autoUpdateLoop（auto_update.go：daemon
+       自身二进制升级）、gcLoop（gc.go / diskusage.go：任务结束之后的工作
+       目录垃圾回收与磁盘用量上报——消费的是 HANDLE_TASK 写的 GC 元数据，
+       但发生在"产出结果"之后，是下一条独立链路）、以及 handleUpdate /
+       handleModelList / handleLocalSkillList 等由服务器心跳下发指令触发的
+       RPC 处理器（模型列表探测、本机 skill 导入——local_skills.go /
+       claude_plugins.go 服务的正是这条支线，不是任务执行期读取的
+       task.Agent.Skills）。这些没有产生或消费这条链路上的 Task/
+       TaskResult 数据，故未建节点。
+    4. 全部 *_test.go 文件、apps/ 下的前端代码——任务书明确排除。
+
+    候选边界留账（节点粒度约定 §5，机械枚举，完整表格见本次分析的最终回复）：
+    按"产生了有名字的中间产物、被另一个代码单元读走"逐一枚举，共枚举出 13
+    处候选（pollLoop / runBatchPoller / handleTask / runTask / execenv 环境
+    准备 / ensureTaskSkillBundles / BuildPrompt / agent.ResolveBackend /
+    backend.Execute / 消息流上报循环 / reportTaskResult+reportTerminalTask /
+    GC 元数据写入 / wakeup.go 的 WS 推送）；其中 6 处对应到本次成的 5 个节点
+    （pollLoop 与 runBatchPoller 按规则 1 合并成 POLL_DISPATCH 一个节点，其余
+    4 处各自单独成节点）；其余 7 处合并/排除：execenv 环境准备（范围外，不
+    建节点）、ensureTaskSkillBundles（规则 1：产物只被同一个函数体后续用到，
+    并入 RUN_TASK）、agent.ResolveBackend（会话执行器/运输工具，按判据不
+    单独成节点）、消息流上报循环与 reportTaskResult/reportTerminalTask
+    （接收方是范围外的远端服务器，不建模成节点，并入相邻节点的 outputs）、
+    GC 元数据写入（消费方 gcLoop 已排除，属于任务产出结果之后的另一条链路）、
+    wakeup.go 的 WS 推送（不携带任务本体，只是提前敲响 POLL_DISPATCH 已有的
+    唤醒信号，并入该节点 inputs，不单独成节点/边）。
+  exits:
+    - name: "任务完成"
+      kind: normal
+      condition: "runTask 判定 agent 执行结果 Status==completed，且输出不匹配已知的“摆烂式兜底”标记（classifyPoisonedOutput），reportTaskResult 走 CompleteTask 回调"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:6455-6480"
+          - "server/internal/daemon/daemon.go:4989-5006"
+          - "server/internal/daemon/client.go:373-392"
+        confirmed_at: "2026-08-28"
+    - name: "任务失败/被打回"
+      kind: abnormal
+      condition: "agent 执行超时（timeout）、静默超过 idle watchdog 阈值被强制终止、CLI 报错，或虽然 completed 但内容命中已知的兜底失败标记；这些都被 runTask 统一映射成 TaskResult.Status==blocked，reportTaskResult 走 FailTask 回调，并附带 taskfailure 分类后的 failure_reason"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:6484-6560"
+          - "server/internal/daemon/daemon.go:5045-5072"
+          - "server/internal/daemon/client.go:402-423"
+        confirmed_at: "2026-08-28"
+    - name: "任务被取消"
+      kind: cancelled
+      condition: "handleTask 起的后台协程 watchTaskCancellation 轮询服务器发现该任务已在服务器侧进入终止态，或任务行被整体删除（404），daemon 关闭 cancelled channel、取消本次执行、丢弃本次 runTask 的结果、只调用 AckTaskCancelled 通知服务器完成收尾，不走 complete/fail 回调"
+      source:
+        refs:
+          - "server/internal/daemon/daemon.go:4563-4611"
+          - "server/internal/daemon/daemon.go:4732-4750"
+          - "server/internal/daemon/client.go:345-348"
+        confirmed_at: "2026-08-28"
+
+groups: []
+
+nodes:
+  - id: POLL_DISPATCH
+    name: "申领并派发任务"
+    kind: program
+    responsibility: |
+      常驻轮询 Multica 后端服务器：按当前空闲并发槽数一次性批量申领最多同等
+      数量的待办任务，再把每个申领到的任务连同一个并发槽位分发进独立
+      goroutine 交给 handleTask。外层 pollLoop 本身不做申领，只用一个
+      wakeup channel 催促内层 runBatchPoller 立刻再跑一轮（runtime 集合变化
+      / 任务结束释放槽位时）；两者合成一个节点，因为 pollLoop 产出的只是
+      "现在该再跑一轮了"这个信号，没有外部可单独指认的输入输出（节点粒度
+      约定规则 1）。
+    inputs: "本机已注册的 runtime ID 列表、当前空闲的并发槽位（信号量，容量=MaxConcurrentTasks）"
+    outputs: "已申领的 Task 列表，每个都配好了一个并发槽位，交给 handleTask 的 goroutine"
+    purpose: "把“该不该去要新任务”（有没有空槽、有没有 runtime）与“要到之后怎么跑”解耦：先占槽再申领，任务永远不会卡在服务器侧 dispatched 状态却本地没有运力去跑；一次批量申领覆盖这台机器上的全部 runtime，避免逐个 runtime 轮询的排队效应"
+    concurrency:
+      default: 1
+      note: "整个 daemon 进程只有一条申领循环；它派发出的并发任务数上限由并发槽信号量决定，见 HANDLE_TASK 的 concurrency"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:1657-1751"
+        - "server/internal/daemon/daemon.go:4292-4335"
+        - "server/internal/daemon/daemon.go:4350-4459"
+      confirmed_at: "2026-08-28"
+
+  - id: HANDLE_TASK
+    name: "单任务生命周期把关"
+    kind: program
+    responsibility: |
+      对每个申领到的任务做前置校验与执行期把关：确认任务指向的 runtime 仍在
+      本机（不在则直接判 runtime_offline 回报失败重试）；若任务的
+      project_resource 里有 pin 在本机的 local_directory，取该路径的互斥锁
+      （拿不到就先把任务状态标成 waiting_local_directory 再阻塞等待）；起一个
+      后台协程 watchTaskCancellation 按固定间隔轮询服务器任务状态，一旦服务
+      器侧任务已终止或该任务行被删除，就关闭 cancelled channel 并调用
+      runCancel()，经同一个可取消的 runCtx 一路向下打断 RUN_TASK 里正在进行
+      的 Agent 调用（这是一条“带外信号”：发起方是 HANDLE_TASK 自己起的协程，
+      不是 RUN_TASK/Agent 主动让出控制权，按抽取纪律记在这里而不单独成边/成
+      节点）；随后调用 RUN_TASK 拿到 TaskResult；把 usage 和最终结果回报给
+      服务器；写 GC 元数据供后续 GC 循环回收工作目录（GC 循环本身在范围外）。
+    inputs: "单个已申领的 Task 结构体、分配的并发槽位 slot"
+    outputs: "TaskUsageEntry 用量回报（ReportTaskUsage）、对应的 CompleteTask/FailTask 回调、AckTaskCancelled（被取消时）、GC 元数据文件"
+    purpose: "把“这个任务还该不该继续跑”的全部旁路判断（runtime 掉线、本地目录锁、服务器侧取消/删除）集中在这一层，让 RUN_TASK 只需要专心把一次 Agent 调用编排好"
+    concurrency:
+      default: 20
+      max: 20
+      note: "并发数=MaxConcurrentTasks，默认值 20（可用 MULTICA_DAEMON_MAX_CONCURRENT_TASKS 覆盖），config.go:67,327；每个申领到的任务各占一个并发槽位、各起一个 goroutine"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4613-4614"
+        - "server/internal/daemon/daemon.go:4563-4611"
+        - "server/internal/daemon/daemon.go:4844-4988"
+        - "server/internal/daemon/daemon.go:4989-5082"
+        - "server/internal/daemon/daemon.go:5083-5104"
+      confirmed_at: "2026-08-28"
+
+  - id: BUILD_PROMPT
+    name: "拼首轮用户消息"
+    kind: program
+    responsibility: |
+      按任务类型（聊天会话 / 评论触发 / autopilot run-only / quick-create /
+      默认的指派型任务）分别拼出这一轮要发给 Agent 的首轮用户消息正文，再统
+      一在末尾追加运行期上下文块（会话连续性提示、触发者信息块、已连接应用
+      列表——这几块之所以放进首轮消息尾部而不是常驻的系统提示词文件，是因
+      为它们逐轮都可能变化，若混进系统提示词会打掉 Claude Code 的 prompt
+      缓存前缀）。刻意保持精简：详细的规则性指令（怎么读评论、怎么回复、
+      status 该怎么流转）不在这里，而是由范围外的 execenv.InjectRuntimeConfig
+      写进任务工作目录里的 CLAUDE.md / AGENTS.md 等运行时简报文件，由 Agent
+      CLI 自己去读（见 AGENT_BACKEND 节点与核对清单“系统提示词在范围外”条）。
+    inputs: "Task 全量字段（触发评论/聊天消息/quick-create 原文/autopilot 描述等）、provider 名字符串"
+    outputs: "拼装完成的首轮用户消息字符串"
+    purpose: "把“这一轮要不要现在说的话”（触发上下文、恢复提示）和“这个 Agent 一直都该遵守的规则”（运行时简报，范围外）分开产出，分开投递"
+    concurrency:
+      default: 20
+      max: 20
+      note: "在调用方 RUN_TASK 的同一个 goroutine 内同步执行，并发数与 RUN_TASK 一致（=MaxConcurrentTasks）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/prompt.go:81-129"
+        - "server/internal/daemon/prompt.go:138-240"
+        - "server/internal/daemon/prompt.go:241-336"
+        - "server/internal/daemon/prompt.go:428-563"
+        - "server/internal/daemon/prompt.go:568-596"
+      confirmed_at: "2026-08-28"
+
+  - id: RUN_TASK
+    name: "单任务执行编排"
+    kind: program
+    responsibility: |
+      单个任务的核心编排：解析 provider 对应的 CLI 可执行文件路径（含自愈重
+      新解析、自定义 runtime profile 覆盖）；确保该 agent 引用的 skill bundle
+      已下载到本地缓存（ensureTaskSkillBundles，命中缓存或按需下载，产出只
+      在本函数内部被后续用到，未被外部代码单元读取，按节点粒度约定规则 1 不
+      单独成节点）；调用范围外的 execenv 包准备/复用隔离执行环境（工作目录、
+      MCP 配置文件、CODEX_HOME 等——execenv 包整体在本次范围外，见范围边界，
+      这里读不到环境到底是怎么搭起来的）；调 BUILD_PROMPT 拿首轮用户消息；
+      组装 ExecOptions（模型、thinking level、service tier、MCP 配置、daemon
+      默认参数与 agent 自定义参数、是否需要把运行时简报内联进 SystemPrompt 字
+      段——只有 openclaw/kimi/traecli/qwenpaw 四家需要，claude 与 codex 都不
+      需要，见 providerNeedsInlineSystemPrompt）；调用 AGENT_BACKEND 执行并
+      拿到流式消息与最终 Result；当且仅当“请求 resume 但被拒绝（或历史不可
+      重放）且这次尝试没有调用过任何工具”时，清空会话 ID、重新走一次
+      BUILD_PROMPT、以全新会话再调用一次 AGENT_BACKEND（失败回灌：把“resume
+      失败”这个结构化结论重新喂回下一次调用，但目标还是同一个 AGENT_BACKEND
+      节点，按同向合并规则记在同一条边上，不新开边）；最终把 agent.Result 分
+      类成 TaskResult（completed / blocked 及具体 failure_reason / cancelled）。
+    inputs: "Task、provider 字符串、并发槽位 slot、可取消的 runCtx（由 HANDLE_TASK 传入，HANDLE_TASK 的取消协程可经它中断本节点及其下游的 Agent 调用）"
+    outputs: "TaskResult（状态、评论文本、branch_name、session_id、work_dir、usage、failure_reason 等）或 error（仅当在真正调用 Agent 之前的准备阶段失败，如鉴权 token 无效、环境准备失败）"
+    purpose: "把“怎么把一个任务变成一次 Agent 调用、调用失败了要不要换个干净会话重来一次、Agent 的原始结果该归类成哪种任务终态”这三件事收在一处，作为 HANDLE_TASK 与 AGENT_BACKEND 之间的编排层"
+    concurrency:
+      default: 20
+      max: 20
+      note: "并发数=MaxConcurrentTasks（默认 20），每个并发任务各自跑一份"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:5609-6009"
+        - "server/internal/daemon/daemon.go:6006-6317"
+        - "server/internal/daemon/daemon.go:6317-6386"
+        - "server/internal/daemon/daemon.go:6660-6710"
+        - "server/internal/daemon/daemon.go:6386-6659"
+      confirmed_at: "2026-08-28"
+
+  - id: AGENT_BACKEND
+    name: "CLI 编码 Agent（Claude / Codex）"
+    kind: agent
+    responsibility: |
+      按 provider 参数把首轮用户消息发给对应的编码 CLI 子进程并驱动一次会话：
+      provider=claude 时以 `claude -p --output-format stream-json
+      --input-format stream-json --permission-mode bypassPermissions
+      --disallowedTools AskUserQuestion` 非交互启动，首轮消息经 stdin 写入一
+      个 stream-json 用户事件，逐行读取 stdout 上的 assistant/tool_use/
+      tool_result/result 等事件；provider=codex 时以 `codex app-server
+      --listen stdio://` 启动，通过 JSON-RPC（stdio）握手、开一个新 thread 或
+      resume 一个既有 thread、提交一次 turn，同样把过程事件转成统一的
+      Message 流。两者都不接收独立的“系统提示词”参数——运行时简报由范围外
+      的 execenv.InjectRuntimeConfig 写进任务工作目录（CLAUDE.md /
+      AGENTS.md），由 CLI 自己去读，daemon 侧的 opts.SystemPrompt 对这两个
+      provider 始终留空（daemon.go:providerNeedsInlineSystemPrompt 只对
+      openclaw/kimi/traecli/qwenpaw 四家内联）。取消（ctx 被上游 runCtx 取消，
+      或 idle watchdog 触发）时对整个子进程组先 SIGTERM 再 SIGKILL。
+      codex 后端自身还带一层与本节点判定为“同一个 Agent”无关的内部重试：仅
+      对“初始化握手失败”或“模型目录刷新失败”这两类特定启动期故障，在同一次
+      Execute 调用里最多再打开一次新进程重试（attempt 2/2），不算新会话/新
+      节点（判据见节点粒度约定规则 2）。
+
+      节点数留账（节点粒度约定〈到底看哪一段来分 Agent〉）：claude 与 codex
+      是两个不同的 CLI 二进制、两套完全不同的协议实现（claude.go 的
+      stream-json vs codex.go 的 app-server JSON-RPC），单看这一点像是
+      "另一套客户端、另一条调用链"。但判据要求同时满足"那条链有自己的系统
+      提示词常量"——本仓源码里两者都没有：搜过 claude.go 与 codex.go 全文，
+      没有任何 --append-system-prompt / 内嵌 persona 字符串一类的自有系统
+      提示词常量，两者的"运行时简报"都来自同一个范围外的
+      execenv.InjectRuntimeConfig(workdir, provider, taskCtx) 调用点（仅文件
+      名 CLAUDE.md/AGENTS.md 不同），且 ExecOptions.SystemPrompt 对两者都
+      始终留空。按判据这仍是同一个 Agent 节点，provider 是参数。**如果不看
+      判据、只按"是否另一套客户端协议"这个更粗的标准数，会得到 2 个节点**
+      ——两个数都写在这里，供使用者按需改判；本次描述采用判据给出的数字：
+      1 个 Agent 节点（provider 参数化）。
+    inputs: "首轮用户消息 prompt 字符串、ExecOptions（模型、resume 会话 ID、思考等级、service tier、MCP 配置、超时与看门狗阈值、daemon 默认参数与 agent 自定义参数、工作目录等）"
+    outputs: "流式 Message（status/text/thinking/tool-use/tool-result/error/log）+ 最终 Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
+    concurrency:
+      default: 20
+      max: 20
+      note: "并发数=MaxConcurrentTasks（默认 20）；每个并发任务各起一个独立子进程"
+    system_prompt:
+      file: "server/internal/daemon/prompt.go"
+      from: 81
+      to: 100
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "整体墙钟超时：opts.Timeout（=daemon 配置 AgentTimeout，默认 0=不限），超时后对子进程组 SIGTERM→SIGKILL"
+        - "daemon 侧 idle watchdog：静默（无新消息）超过 30 分钟（DefaultAgentIdleWatchdog）强制终止，重标记为 idle_watchdog；单个工具调用原地静默超过 2 小时（DefaultAgentToolWatchdog）视同静默，同样触发"
+        - "仅 codex：单轮语义不活跃超过 10 分钟（defaultCodexSemanticInactivityTimeout）视为该轮失败；首轮完全无进展超过 60 秒（defaultCodexFirstTurnNoProgressTimeout）判定走内部重试；JSON-RPC 握手阶段超过 30 秒（defaultCodexHandshakeTimeout）判超时"
+        - "正常结束：收到 result（claude）或 turn 完成事件（codex），经 stdin EOF/进程退出后返回最终 Result"
+      limits:
+        steps: not_set
+        time: "见 stop.conditions；claude/codex 均未设置 --max-turns（opts.MaxTurns 从未被 daemon 赋值），故没有独立的“步数”上限，全部体现为时间类上限"
+        cost: not_set
+        consecutive_failures: "codex 后端对初始化握手失败/模型目录刷新失败这两类故障，同一次 Execute 内最多重试 1 次（2 次尝试）；claude 后端无内部重试。更外层“resume 被拒绝时清空会话重跑一次”记在 RUN_TASK→AGENT_BACKEND 这条边上，不在这里重复计"
+    spawns_subagents: false
+    confidence: certain
+    field_confidence:
+      tools: unread
+      mcp: unread
+      skills: unread
+    # tools 为什么是 unread：claude/codex 的实际可用工具集（文件读写、
+    #   bash、web 等）实现在 claude/codex 这两个外部二进制内部，不在
+    #   multica 仓库任何位置；本仓源码唯一能确认的是 claude.go:729 那一条
+    #   `--disallowedTools AskUserQuestion`（禁用，不是启用清单）。
+    # mcp 为什么是 unread：完全是运行期动态数据，没有写死的固定清单——
+    #   runtime_mcp.go:36-96(mergeRuntimeAndAgentMcpConfig) 把"本机已有的
+    #   provider 原生 MCP 配置文件"(runtime_mcp.go:246-317) 与
+    #   task.Agent.McpConfig(服务器下发，每个 agent 可不同) 合并后经
+    #   --mcp-config(claude) / CODEX_HOME/config.toml(codex) 注入。
+    # skills 为什么是 unread：同样是运行期数据——task.Agent.SkillRefs 由
+    #   服务器按 agent 配置下发，daemon.go:5390-5456
+    #   (ensureTaskSkillBundles) 按需下载到本地缓存(skill_cache.go)，具体
+    #   有哪些 skill 因 agent/task 而异，源码里没有固定清单。
+    source:
+      refs:
+        - "server/pkg/agent/agent.go:16-110"
+        - "server/pkg/agent/agent.go:328-375"
+        - "server/pkg/agent/claude.go:39-368"
+        - "server/pkg/agent/claude.go:717-776"
+        - "server/pkg/agent/codex.go:820-1000"
+        - "server/pkg/agent/codex.go:263-286"
+      confirmed_at: "2026-08-28"
+
+edges:
+  - from: POLL_DISPATCH
+    to: HANDLE_TASK
+    category: normal
+    trigger: "runBatchPoller 一次批量申领拿到任务后，为每个任务分配一个并发槽位并各起一个 goroutine 调用 handleTask"
+    carrier: bundle
+    payloads:
+      - content: "单个 Task 结构体（含 Agent 定义、Repos、触发评论/聊天/quick-create/autopilot 等全部上下文字段）及分配到的并发槽位 slot"
+        produced_at: "ClaimTasksWSFirst/ClaimTasks 从服务器批量申领返回时"
+        delivered_at: "runBatchPoller 起 goroutine 调用 d.handleTask(parentCtx, t, slot) 时"
+    concurrency_control: "按并发槽位数量排队；槽位耗尽时下一轮申领会先阻塞等待空槽（最多等 taskSlotWaitTimeout=2s，超时则退避重试）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4423-4448"
+      confirmed_at: "2026-08-28"
+
+  - from: HANDLE_TASK
+    to: POLL_DISPATCH
+    category: normal
+    trigger: "handleTask 对应的 goroutine 执行完毕，无论任务最终是完成、失败还是被取消"
+    carrier: event
+    payloads:
+      - content: "释放回信号量的并发槽位 + 一次 wakeup 信号（催促 runBatchPoller 不必等 PollInterval 就立刻再申领一轮）"
+        produced_at: "handleTask 返回时"
+        delivered_at: "runBatchPoller 派发时注册的 deferred 回调里（sem <- slot; signalPollerWakeup(wakeup)）"
+    concurrency_control: "信号量天然去重；wakeup channel 是容量 1 的非阻塞 channel，多次释放只会保留一次待处理的唤醒"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4437-4448"
+      confirmed_at: "2026-08-28"
+
+  - from: HANDLE_TASK
+    to: RUN_TASK
+    category: normal
+    trigger: |
+      runtime 存活校验通过，且（若任务命中 local_directory 项目资源）已经拿
+      到对应路径的互斥锁。与此同时 HANDLE_TASK 起的后台协程会持续轮询服务器
+      任务状态；一旦服务器侧任务转入终止态或任务行被删除，会经同一个 runCtx
+      取消这次调用（带外信号，见 HANDLE_TASK 节点 responsibility）。
+    carrier: bundle
+    payloads:
+      - content: "Task、provider、并发槽位 slot、task 专属 logger、可取消的 runCtx"
+        produced_at: "handleTask 完成 runtime 校验与本地目录锁获取之后"
+        delivered_at: "调用 d.runner.run(runCtx, task, provider, slot, taskLog) 时"
+    concurrency_control: "不会发生（每个 handleTask 实例只调用一次 runTask，重试发生在 RUN_TASK 内部，不重新经过这条边）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4703-4706"
+      confirmed_at: "2026-08-28"
+
+  - from: RUN_TASK
+    to: HANDLE_TASK
+    category: normal
+    trigger: "runTask 返回（正常产出结果、或在真正调用 Agent 之前的准备阶段就失败、或被 HANDLE_TASK 的取消协程经 runCtx 中断）"
+    carrier: bundle
+    payloads:
+      - content: "TaskResult（Status/Comment/SessionID/WorkDir/Usage/FailureReason 等）"
+        produced_at: "runTask 把 agent.Result 分类完毕时"
+        delivered_at: "函数返回值"
+      - content: "error（仅当尚未产出 TaskResult 就失败：如任务缺 workspace_id、鉴权 token 无效、skill bundle 下载失败、执行环境准备失败）"
+        produced_at: "runTask 准备阶段任意一步失败时"
+        delivered_at: "函数返回值"
+    concurrency_control: "不会发生（一次同步调用一次返回）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:4708-4750"
+      confirmed_at: "2026-08-28"
+
+  - from: RUN_TASK
+    to: BUILD_PROMPT
+    category: normal
+    trigger: "每次真正要调用 Agent 之前都会先拼一次首轮消息——首次调用一次，若触发“清空会话重试”还会再拼一次全新的（不带 resume 提示）"
+    carrier: bundle
+    payloads:
+      - content: "Task（此时 PriorSessionID 等字段仍是任务原始值）、provider"
+        produced_at: "runTask 首次进入执行阶段时"
+        delivered_at: "调用 BuildPrompt(task, provider) 时"
+      - content: "Task（PriorSessionID 已被清空、PriorSessionResumeUnavailable 置 true）、provider"
+        produced_at: "runTask 判定需要清空会话重试时（shouldRetryWithFreshSession 命中）"
+        delivered_at: "调用 BuildPrompt(task, provider) 第二次时"
+    concurrency_control: "不会发生（同一个 goroutine 内顺序调用）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6007"
+        - "server/internal/daemon/daemon.go:6373"
+      confirmed_at: "2026-08-28"
+
+  - from: BUILD_PROMPT
+    to: RUN_TASK
+    category: normal
+    trigger: "BuildPrompt 每次调用都同步返回"
+    carrier: bundle
+    payloads:
+      - content: "拼装完成的首轮用户消息字符串"
+        produced_at: "BuildPrompt 返回时"
+        delivered_at: "同一行赋值给 runTask 内的 prompt/freshPrompt 变量"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6007"
+      confirmed_at: "2026-08-28"
+
+  - from: RUN_TASK
+    to: AGENT_BACKEND
+    category: normal
+    trigger: |
+      拿到首轮用户消息后即调用 agent.Backend.Execute。同一条边覆盖两种触发：
+      首次调用（可能带 ResumeSessionID，即请求 resume 既有会话）；以及命中
+      shouldRetryWithFreshSession（resume 被拒绝/历史不可重放，且这次尝试
+      未调用过任何工具）时，清空 ResumeSessionID、以全新会话重新调用一次
+      （失败回灌：把上一次"resume 失败"的结论体现为这一次不再请求 resume）。
+      调用期间若 HANDLE_TASK 的取消协程或 daemon 侧 idle watchdog 触发，会经
+      同一个可取消的 ctx 中断这次调用（带外信号，说明见 AGENT_BACKEND.stop 与
+      HANDLE_TASK 节点）。
+    carrier: bundle
+    payloads:
+      - content: "首轮用户消息 prompt、ExecOptions（模型/思考等级/service tier/MCP 配置/超时与看门狗阈值/工作目录/daemon 默认参数与 agent 自定义参数），ResumeSessionID 非空"
+        produced_at: "runTask 首次组装 ExecOptions 时"
+        delivered_at: "调用 backend.Execute(agentCtx, prompt, opts) 时（经 executeAndDrain 包一层：驱动流式消息转发与 idle watchdog）"
+      - content: "同上，但 ResumeSessionID 清空、ResumeExpected/ResumeContinuityNotice 改为反映“恢复失败”"
+        produced_at: "runTask 判定需要清空会话重试时"
+        delivered_at: "第二次调用 backend.Execute 时"
+    concurrency_control: "不会发生（同一个 goroutine 内先后至多两次同步调用，不并发）"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6317-6323"
+        - "server/internal/daemon/daemon.go:6353-6386"
+        - "server/internal/daemon/daemon.go:6788-6810"
+      confirmed_at: "2026-08-28"
+
+  - from: AGENT_BACKEND
+    to: RUN_TASK
+    category: normal
+    trigger: "每次 backend.Execute 会话结束（正常产出结果 / 超时 / 被上游 ctx 取消 / idle watchdog 强制终止）"
+    carrier: bundle
+    payloads:
+      - content: "流式 Message（text/thinking/tool-use/tool-result/status/error/log），供 executeAndDrain 边收边转发给服务器（ReportTaskMessages）"
+        produced_at: "Agent 会话进行中随事件产生"
+        delivered_at: "session.Messages channel 持续推送，executeAndDrain 每 500ms 或收到即批量上报"
+      - content: "最终 agent.Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
+        produced_at: "Agent 会话结束时（claude 的 result 事件 / codex 的 turn 完成，或被 idle watchdog / ctx 取消强制中止）"
+        delivered_at: "session.Result channel 送出一次；executeAndDrain 收到后返回给 runTask"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6788-7060"
+        - "server/pkg/agent/agent.go:125-158"
+      confirmed_at: "2026-08-28"

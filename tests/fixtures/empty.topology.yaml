@@ -1,0 +1,20 @@
+schema_version: 1
+source_project: "tests/fixtures/fake-project"
+generated_at: "2026-08-26"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "使用者点「开始」，经入口校验后进入"
+  exits:
+    - name: "成功"
+      kind: normal
+      condition: "汇总通过，结果落盘"
+      source:
+        refs:
+          - "src/workflow.ts:441-447"
+        confirmed_at: "2026-08-26"
+
+nodes: []
+edges: []
