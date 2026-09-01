@@ -2,12 +2,39 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FX, data, intersects } from './helpers.mjs';
 import { layout } from '../scripts/lib/layout.mjs';
-import { measureLabel } from '../scripts/lib/measure.mjs';
+import { measureLabel, wrapLineCount } from '../scripts/lib/measure.mjs';
 
 test('measureLabel：中文 12px、ASCII 6px、高 16', () => {
   assert.deepEqual(measureLabel('abc'), { w: 18, h: 16 });
   assert.deepEqual(measureLabel('中文'), { w: 24, h: 16 });
   assert.deepEqual(measureLabel('a中'), { w: 18, h: 16 });
+});
+
+test('wrapLineCount：按全角/半角宽度换行，恰好撑满不换行', () => {
+  assert.equal(wrapLineCount('a'.repeat(10), 60), 1); // 10*6=60，刚好不超
+  assert.equal(wrapLineCount('a'.repeat(11), 60), 2); // 第 11 个字符超了
+  assert.equal(wrapLineCount('中'.repeat(5), 60), 1); // 5*12=60，刚好不超
+  assert.equal(wrapLineCount('中'.repeat(6), 60), 2);
+});
+
+test('wrapLineCount：换行符按空白折叠，不当强制断行（卡片描述没设 white-space:pre-line）', () => {
+  assert.equal(wrapLineCount('a\n\nb', 100), 1);
+  assert.equal(wrapLineCount('', 100), 1);
+});
+
+test('nodeHeight 修复回归：中文责任描述按实际换行数算高度，不能再用「每行 26 字」估半截', () => {
+  const doc = data(FX('three-groups.topology.yaml'));
+  const longText = '瑞星久宇被识成互久宇、瑞昱久宇、福建久宇，判同一实体看地址税号账号合同号型号这些硬信息。'
+    .repeat(4); // 302 字左右，中文为主，跟 aiudit_platform 实际炸掉的 A3 节点同一量级
+  doc.nodes[2].responsibility = longText;
+  const contentWidth = 184 - 20;
+  const expectedLines = wrapLineCount(longText, contentWidth);
+  const expectedHeight = 76 + 14 * Math.max(0, expectedLines - 2);
+  const oldBuggyExtraLines = Math.max(0, Math.ceil(longText.length / 26) - 2);
+  const oldBuggyHeight = 76 + 14 * oldBuggyExtraLines;
+  const box = layout(doc).nodes.get('N3');
+  assert.equal(box.h, expectedHeight, '应按真实换行数出高度');
+  assert.ok(box.h > oldBuggyHeight, '不能再退回旧的「长度/26」估算，那会比实际需要矮一大截');
 });
 
 test('分组各占一列，列序按 order', () => {
