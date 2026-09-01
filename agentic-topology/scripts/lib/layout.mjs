@@ -1,5 +1,5 @@
 import { baseGroups } from './groups.mjs';
-import { measureLabel } from './measure.mjs';
+import { measureLabel, wrapLineCount } from './measure.mjs';
 import { foldSummary } from './interactions.mjs';
 
 const M = {
@@ -26,7 +26,12 @@ const CATEGORY_MARKERS = {
 
 function nodeHeight(node) {
   const responsibility = String(node.responsibility || '');
-  const extraLines = Math.max(0, Math.ceil(responsibility.length / 26) - 2);
+  // 卡片内容区宽度 = 卡片宽 - 左右各 10px 内边距（topo.css .topo-node 的 padding: 8px 10px）。
+  // 描述几乎全是中文，全角字符按 1em 计，不能按纯 ASCII 的「每行 26 字」估，
+  // 那样算出来的高度只有实际需要的一半左右，文字会撑破卡片边框糊到别的元素上。
+  const contentWidth = M.NODE_W - 20;
+  const lines = wrapLineCount(responsibility, contentWidth);
+  const extraLines = Math.max(0, lines - 2);
   const marked = Number(node.concurrency?.default) > 1 || node.spawns_subagents === true;
   return M.NODE_MIN_H + 14 * extraLines + (marked ? 22 : 0);
 }
