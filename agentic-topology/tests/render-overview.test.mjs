@@ -13,6 +13,24 @@ test('整图层常驻可见 + 起止标记', () => {
   assert.match(ov, /校验连续失败/);         // 每个终点的终止条件都能看到
 });
 
+test('回归：发起标记不再绝对定位盖住分组框，entry 多长都不会糊住第一行节点', () => {
+  const ov = sect(H(), 'view-overview');
+  const pillOpen = ov.indexOf('<div class="topo-pill">');
+  const stageOpen = ov.indexOf('<div class="topo-stage"');
+  assert.ok(pillOpen >= 0 && stageOpen >= 0, '发起标记或图区没找到');
+  assert.ok(pillOpen < stageOpen, '发起标记应该在图区前面的正常文档流里，不是叠在图上');
+  assert.doesNotMatch(ov.slice(pillOpen, pillOpen + 60), /style="left:/, '发起标记不该再用像素坐标定位');
+});
+
+test('回归：核对清单默认收起，用折叠列表呈现而不是一次性铺满整屏', () => {
+  const ov = sect(H(), 'view-overview');
+  assert.match(
+    ov,
+    /<details class="topo-acc-item"><summary class="topo-acc-head">这几处得你自己去核实/,
+    '核对清单应该用未展开的 <details> 折叠，不是一次性全铺开',
+  );
+});
+
 test('节点一眼可读：图上直接有职责文字', () => {
   const ov = sect(H(), 'view-overview');
   assert.match(ov, /topo-node-desc/);

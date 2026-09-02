@@ -143,19 +143,26 @@ function overview(data, pageLayout, staleness) {
     `<span class="topo-legend-item"><span class="topo-swatch is-ok"></span>${esc(WORDS.category.pass_or_skip)}</span>` +
     `<span class="topo-legend-item"><span class="topo-swatch is-back"></span>` +
     `${esc(WORDS.category.reject_or_halt)}</span></div>`;
-  const diagram = `<div class="topo-wrap"><div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
+  // 发起标记以前是 .topo-stage 内部绝对定位在 (0,0) 的一枚小胶囊，隐含假设 entry 只有一行。
+  // entry 一旦是几百字的长段落（真实项目常见），它会盖住第一行的分组框与节点——这不是布局算法的锅，
+  // 它压根没被算进 layout.mjs 的坐标系。改成图前面的正常文档流色块，让浏览器按实际内容自己撑高度，
+  // 不用再猜一个像素数字。
+  const pill = `<div class="topo-pill">${esc(WORDS.labels.start)}：${value(data.graph?.entry)}</div>`;
+  const diagram = `<div class="topo-wrap">${pill}<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
-    ` aria-hidden="true">${markers}${edges}</svg>${frames}<div class="topo-pill" style="left:0;top:0">` +
-    `${esc(WORDS.labels.start)}：${value(data.graph?.entry)}</div>${nodes}</div></div>`;
+    ` aria-hidden="true">${markers}${edges}</svg>${frames}${nodes}</div></div>`;
   const ending = `<div class="card card-compact"><div class="card-header"><div class="card-title">` +
     `${esc(WORDS.labels.end)}</div></div>` +
     `<div class="card-content"><ul class="list">${exits}</ul></div></div></div></section>`;
   const checklist = (data.checklist || []).map((item) =>
     `<li class="list-item"><span class="text-xs grow">${value(item.text)}</span></li>`).join('');
-  const checklistCard = `<div class="card card-compact"><div class="card-header"><div class="card-title">` +
-    `${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</div></div>` +
-    `<div class="card-content"><ul class="list">${checklist}</ul></div></div>`;
+  // 核对清单常常有几十条，摊平铺满一整屏——默认收起，点开后自己滚，不拖累整页长度。
+  const checklistCard = `<div class="card card-compact"><div class="topo-acc"><details class="topo-acc-item">` +
+    `<summary class="topo-acc-head">${esc(WORDS.labels.checklist)}` +
+    `<span class="topo-acc-mark">${data.checklist?.length || 0} 处</span></summary>` +
+    `<div class="topo-acc-body topo-checklist-scroll"><ul class="list">${checklist}</ul></div>` +
+    `</details></div></div>`;
   return `${head}${diagram}${checklistCard}${ending}`;
 }
 
