@@ -3,7 +3,7 @@ const ENUMS = {
   context_sharing: new Set(['full', 'isolated', 'mixed']),
   exit_kind: new Set(['normal', 'abnormal', 'cancelled']),
   node_kind: new Set(['agent', 'program', 'decision']),
-  confidence: new Set(['certain', 'inferred', 'unread']),
+  confidence: new Set(['certain', 'inferred', 'unread', 'design']),
 };
 
 const TOP_KEYS = new Set([
@@ -126,7 +126,7 @@ function nodeCheck(node, index, groupIds, nodeIds, issue) {
       const target = key.split('.').reduce((current, part) => current?.[part], node);
       if (target === undefined) {
         issue('E_UNKNOWN_FIELD', `${path}.field_confidence.${key}`, '字段可信度指向不存在的字段');
-      } else if (!['inferred', 'unread'].includes(val)) {
+      } else if (!['inferred', 'unread', 'design'].includes(val)) {
         issue('E_ENUM', `${path}.field_confidence.${key}`, '字段可信度错误');
       }
     }
@@ -295,7 +295,7 @@ export function validate(data, lines = new Map()) {
         const target = key.split('.').reduce((current, part) => current?.[part], edge);
         const fieldPath = `${edgePath}.field_confidence.${key}`;
         if (target === undefined) issue('E_UNKNOWN_FIELD', fieldPath, '字段可信度指向不存在的字段');
-        else if (!['inferred', 'unread'].includes(value)) issue('E_ENUM', fieldPath, '字段可信度错误');
+        else if (!['inferred', 'unread', 'design'].includes(value)) issue('E_ENUM', fieldPath, '字段可信度错误');
       }
     }
   });

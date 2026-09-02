@@ -16,13 +16,17 @@
 .topo-edge.is-back { stroke: var(--destructive); }
 .topo-edge.is-inferred, .topo-edge.is-unread { stroke-dasharray: 5 4; }
 .topo-elabel { font-size: 10.5px; fill: var(--muted-foreground); paint-order: stroke fill; stroke: var(--card); stroke-width: 3.5px; stroke-linejoin: round; }
-.topo-node { z-index: 2; position: absolute; width: 184px; box-sizing: border-box; padding: 8px 10px; background: color-mix(in oklab, var(--card) 80%, transparent); border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); cursor: grab; }
-.topo-node:hover { background: var(--card); box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }
-.topo-node.is-agent { background: color-mix(in oklab, color-mix(in oklab, var(--primary) 10%, var(--card)) 80%, transparent); border-radius: 14px; }
-.topo-node.is-agent:hover { background: color-mix(in oklab, var(--primary) 10%, var(--card)); }
-.topo-node.is-guess { border-style: dashed; border-color: var(--warning); background: color-mix(in oklab, color-mix(in oklab, var(--warning) 10%, var(--card)) 80%, transparent); }
-.topo-node.is-guess:hover { background: color-mix(in oklab, var(--warning) 10%, var(--card)); }
-.topo-node-top { display: flex; align-items: center; gap: 6px; }
+/* 底色只管「这是什么块」：AI 蓝、程序黄、岔路口紫。
+   查得准不准是另一个维度，走虚线边框 + 徽章，MUST NOT 也来抢底色——否则一份全是推测的设计稿
+   会整张图一个颜色，等于没分类。 */
+.topo-node { --node-tint: var(--muted-foreground); z-index: 2; position: absolute; width: 184px; box-sizing: border-box; padding: 8px 10px; background: color-mix(in oklab, var(--node-tint) 12%, color-mix(in oklab, var(--card) 82%, transparent)); border: 1px solid color-mix(in oklab, var(--node-tint) 45%, var(--border)); border-radius: calc(var(--radius) - 4px); box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); cursor: grab; }
+.topo-node:hover { background: color-mix(in oklab, var(--node-tint) 14%, var(--card)); box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }
+.topo-node.is-agent { --node-tint: #2563eb; border-radius: 14px; }
+.topo-node.is-program { --node-tint: #d97706; }
+.topo-node.is-decision { --node-tint: #7c3aed; }
+.topo-node.is-unsure { border-style: dashed; }
+.topo-node-top { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; overflow: hidden; }
+.topo-node-top > * { flex: 0 0 auto; white-space: nowrap; }
 .topo-node-id { font-size: 10px; color: var(--muted-foreground); }
 .topo-node-name { font-size: 12px; font-weight: 600; line-height: 1.35; margin-top: 3px; }
 .topo-node-desc { font-size: 10.5px; color: var(--muted-foreground); line-height: 1.4; margin-top: 3px; }
@@ -45,6 +49,18 @@
 .topo-md pre { margin: 6px 0; padding: 8px 10px; border-radius: var(--radius); background: var(--muted);
   overflow-x: auto; }
 .topo-md pre code { padding: 0; background: none; }
+/* 卡片里的正文也走 Markdown，但排版要收紧：卡片高度是程序估出来的，段间距一大就撑破估算。 */
+.topo-node-desc .topo-md p { margin: 0 0 4px; }
+.topo-node-desc .topo-md ul, .topo-node-desc .topo-md ol { margin: 0 0 4px; padding-left: 15px; }
+.topo-node-desc .topo-md h1, .topo-node-desc .topo-md h2, .topo-node-desc .topo-md h3,
+.topo-node-desc .topo-md h4, .topo-node-desc .topo-md h5, .topo-node-desc .topo-md h6 {
+  margin: 2px 0; font-size: 11px; }
+/* 收尾块：与发起块共用 .topo-pill 外观，每个出口一段。 */
+.topo-exit + .topo-exit { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.topo-exit-name { font-size: 12px; font-weight: 600; color: var(--foreground); }
+.topo-exit-kind { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
+/* 标题栏里的拓扑标题 */
+.topo-title { font-size: 13px; font-weight: 600; color: var(--foreground); margin-right: 4px; }
 .topo-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 11px; color: var(--muted-foreground); }
 .topo-filters { display: flex; flex-wrap: wrap; gap: 12px; }
 .topo-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -95,6 +111,9 @@
 .topo-flag.is-sure { background: color-mix(in oklab, var(--success) 16%, var(--card)); color: var(--success); }
 .topo-flag.is-guess { background: color-mix(in oklab, var(--warning) 26%, var(--card)); color: var(--warning-foreground); }
 .topo-flag.is-unknown { background: var(--muted); color: var(--muted-foreground); border: 1px dashed var(--muted-foreground); }
+.topo-flag.is-design { background: color-mix(in oklab, #7c3aed 18%, var(--card)); color: #6d28d9; border: 1px dashed #7c3aed; }
+/* 核实角标：清单不再单开一块，条目挂到各自的方块上，鼠标停上去看 title。 */
+.topo-warn { margin-left: auto; display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 999px; font-size: 9.5px; font-weight: 600; cursor: help; background: color-mix(in oklab, var(--warning) 30%, var(--card)); color: var(--warning-foreground); }
 .topo-marks { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
 .topo-mark { display: inline-flex; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); font-size: 9.5px; }
 .topo-mark.is-conc { border-color: var(--success); color: var(--success); }

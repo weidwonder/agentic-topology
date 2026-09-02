@@ -26,9 +26,9 @@ test('有序列表：1. 2. 3.', () => {
   assert.equal(renderMarkdown('1. 一\n2. 二'), '<ol><li>一</li><li>二</li></ol>');
 });
 
-test('段落：空行分段，段内单换行渲染成 br', () => {
+test('段落：空行才分段；段内单换行按空格接上，不照搬原文的手工折行', () => {
   const html = renderMarkdown('第一段第一行\n第一段第二行\n\n第二段');
-  assert.equal(html, '<p>第一段第一行<br>第一段第二行</p>\n<p>第二段</p>');
+  assert.equal(html, '<p>第一段第一行 第一段第二行</p>\n<p>第二段</p>');
 });
 
 test('围栏代码块：带语言标注生成 language-xxx class，内容原样保留不做行内替换', () => {

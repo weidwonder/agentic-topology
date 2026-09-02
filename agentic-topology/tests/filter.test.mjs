@@ -58,6 +58,6 @@ test('app.js 只有一份筛选判据：不得自己再判 confidence/kind/group
 
 test('页面上三组筛选控件齐全', () => {
   const ov = sect(renderOk(FX('three-confidence.topology.yaml'), 'flt.html'), 'view-overview');
-  for (const w of ['查得准不准', '分堆', 'AI'])
+  for (const w of ['方块情况', '分堆', 'AI'])
     assert.ok(ov.includes(w), `缺筛选项「${w}」`);
 });
