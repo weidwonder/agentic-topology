@@ -1,7 +1,7 @@
 {
   "name": "agentic-topology",
   "version": "0.1.0",
-  "description": "把一个 agentic 应用的编排画成一张能点开下钻的图。读源码抽出有哪些 AI、各自能用什么工具、谁调谁、传了什么，渲染成可离线打开的单文件网页。",
+  "description": "Draw the orchestration of an agentic app as a diagram you can click into. Reads the source for which AIs exist, what tools each has, who calls whom and what gets handed over, then renders a single HTML file that opens offline.",
   "keywords": ["agent", "agentic", "topology", "orchestration", "diagram", "claude-code", "skill"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/weidwonder/agentic-topology.git" },
@@ -9,7 +9,7 @@
   "type": "module",
   "engines": { "node": ">=18" },
   "bin": { "agentic-topology": "./bin/cli.mjs" },
-  "files": ["bin/", "scripts/", "references/", "assets/", "SKILL.md"],
+  "files": ["bin/", "scripts/", "references/", "assets/", "SKILL.md", "README.md"],
   "scripts": { "test": "node --test" },
   "dependencies": {}
 }

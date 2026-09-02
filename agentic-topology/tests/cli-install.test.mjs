@@ -102,7 +102,8 @@ test('install 的写盘能力 MUST NOT 漏进 render / validate 那条链', () =
 // 与其钉一个必然过期的数，不如把它从 README 里去掉——这里只钉住不会漂的部分。
 test('两份 README 互相引用，且所有相对链接与图片都指得到', () => {
   const repoRoot = path.resolve('..');
-  const readmes = { zh: 'README.md', en: 'README.en.md' };
+  // 英文版是默认 README；中文版挂在 README.zh-CN.md。
+  const readmes = { zh: 'README.zh-CN.md', en: 'README.md' };
   for (const name of Object.values(readmes)) {
     const file = path.join(repoRoot, name);
     assert.ok(existsSync(file), `缺 ${name}`);
@@ -114,9 +115,9 @@ test('两份 README 互相引用，且所有相对链接与图片都指得到', 
     }
     assert.ok(links >= 4, `${name} 只扫到 ${links} 条相对链接，正则可能失配了`);
   }
-  assert.match(readFileSync(path.join(repoRoot, readmes.zh), 'utf8'), /README\.en\.md/,
+  assert.match(readFileSync(path.join(repoRoot, readmes.zh), 'utf8'), /\]\(\.\/README\.md\)/,
     '中文版没指向英文版');
-  assert.match(readFileSync(path.join(repoRoot, readmes.en), 'utf8'), /README\.md/,
+  assert.match(readFileSync(path.join(repoRoot, readmes.en), 'utf8'), /README\.zh-CN\.md/,
     '英文版没指向中文版');
 });
 
