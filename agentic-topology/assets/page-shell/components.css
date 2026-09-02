@@ -30,9 +30,11 @@ a { color: inherit; }
 .list { display: flex; flex-direction: column; }
 .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .kv { display: grid; gap: 10px; }
-.kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; font-size: 13px; }
+/* 两列对齐的定义列表：标签列定宽，正文列左对齐。
+   以前是 flex + space-between + text-align:right，正文一长就往回顶进标签列，看着像串行。 */
+.kv-row { display: grid; grid-template-columns: minmax(72px, 132px) minmax(0, 1fr); align-items: baseline; gap: 6px 16px; font-size: 13px; }
 .kv-row > dt { color: var(--muted-foreground); }
-.kv-row > dd { margin: 0; font-weight: 500; text-align: right; }
+.kv-row > dd { margin: 0; min-width: 0; font-weight: 500; text-align: left; overflow-wrap: anywhere; }
 .separator { height: 1px; border: 0; margin: 0; background: var(--border); }
 .screen { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
 .app-bar { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--card); }

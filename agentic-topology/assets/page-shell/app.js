@@ -172,6 +172,27 @@ function membersOfGroup(groupId) {
   return [...document.querySelectorAll(`.topo-node[data-group="${CSS.escape(groupId)}"]`)];
 }
 
+// 分组框的内边距，跟出图时 layout.mjs 的 GROUP_PAD_X / GROUP_PAD_TOP 一个口径。
+const GROUP_PAD_X = 24;
+const GROUP_PAD_TOP = 26;
+
+/** 把每个分组框收紧到组内方块的外接矩形。
+ *  方块能被拖到框外面，框却不跟着走的话，「这块属于哪一堆」就变成了假信息。 */
+function fitGroups() {
+  for (const frame of document.querySelectorAll('#view-overview .topo-frame')) {
+    const members = membersOfGroup(frame.dataset.groupId);
+    if (members.length === 0) continue;
+    const boxes = members.map(boxOf);
+    const left = Math.min(...boxes.map((box) => box.x)) - GROUP_PAD_X;
+    const top = Math.min(...boxes.map((box) => box.y)) - GROUP_PAD_TOP;
+    const right = Math.max(...boxes.map((box) => box.x + box.w)) + GROUP_PAD_X;
+    const bottom = Math.max(...boxes.map((box) => box.y + box.h)) + GROUP_PAD_X;
+    moveElement(frame, left, top);
+    frame.style.width = `${Math.round(right - left)}px`;
+    frame.style.height = `${Math.round(bottom - top)}px`;
+  }
+}
+
 function startDrag(event) {
   const target = event.target.closest('.topo-node, .topo-frame');
   if (!target || !stage()?.contains(target)) return;
@@ -193,6 +214,7 @@ function startDrag(event) {
     moved = true;
     moveElement(target, startBox.x + dx, startBox.y + dy);
     for (const follower of followerBoxes) moveElement(follower.node, follower.box.x + dx, follower.box.y + dy);
+    if (!isGroup) fitGroups();
     redrawEdges();
   };
   const onUp = () => {
@@ -218,7 +240,7 @@ function collectPositions() {
   }
   for (const frame of document.querySelectorAll('#view-overview .topo-frame')) {
     const box = boxOf(frame);
-    positions.groups[frame.dataset.groupId] = { x: box.x, y: box.y };
+    positions.groups[frame.dataset.groupId] = { x: box.x, y: box.y, w: box.w, h: box.h };
   }
   return positions;
 }
@@ -233,12 +255,17 @@ function applyPositions(positions) {
     const frame = document.querySelector(`#view-overview .topo-frame[data-group-id="${CSS.escape(id)}"]`);
     if (frame) moveElement(frame, point.x, point.y);
   }
+  fitGroups();
   redrawEdges();
 }
 
 function resetPositions() {
   for (const element of document.querySelectorAll('#view-overview .topo-node, #view-overview .topo-frame'))
     moveElement(element, Number(element.dataset.x), Number(element.dataset.y));
+  for (const frame of document.querySelectorAll('#view-overview .topo-frame')) {
+    frame.style.width = `${frame.dataset.w}px`;
+    frame.style.height = `${frame.dataset.h}px`;
+  }
   redrawEdges();
   markDirty(true);
 }
@@ -347,3 +374,6 @@ window.addEventListener('beforeunload', (event) => {
 });
 
 applyPositions(readData()?.positions);
+// 卡片高度是估出来的、正文又走 Markdown，实际渲染出来常比估算高一点；
+// 开局先按真实尺寸把分组框收一遍，免得框底和最后一张卡片差出一截。
+fitGroups();

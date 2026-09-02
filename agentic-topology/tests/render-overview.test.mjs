@@ -149,3 +149,34 @@ test('标题栏有这张图是谁的', () => {
   const ov = sect(renderOk(FX('three-groups.topology.yaml'), 'title.html'), 'view-overview');
   assert.match(ov, /class="topo-title">tests\/fixtures\/fake-project</, '标题栏没有拓扑标题');
 });
+
+test('发起说明与收尾说明都在画布外面，一前一后夹着图', () => {
+  const ov = sect(renderOk(FX('three-groups.topology.yaml'), 'outside.html'), 'view-overview');
+  const startAt = ov.indexOf('从哪开始');
+  const wrapAt = ov.indexOf('<div class="topo-wrap">');
+  const endAt = ov.indexOf('在哪结束');
+  assert.ok(startAt >= 0 && wrapAt >= 0 && endAt >= 0, '三块都得在');
+  assert.ok(startAt < wrapAt, '发起说明该在画布前面，不能塞进画布里');
+  assert.ok(endAt > wrapAt, '收尾说明该在画布后面');
+});
+
+test('详情弹层：定义列表两列对齐，正文不往标签列里顶', () => {
+  const css = renderOk(FX('three-groups.topology.yaml'), 'kv.html')
+    .match(/<style[\s\S]*?<\/style>/g).join('');
+  const row = css.match(/\.kv-row\s*\{[^}]*\}/)[0];
+  assert.match(row, /display:\s*grid/, '两列对齐要用 grid，flex+space-between 会让正文顶回标签列');
+  assert.match(row, /grid-template-columns/);
+  const dd = css.match(/\.kv-row > dd\s*\{[^}]*\}/)[0];
+  assert.match(dd, /text-align:\s*left/, '正文列该左对齐');
+  const cell = css.match(/\.topo-chain-cell\s*\{[^}]*\}/)[0];
+  assert.doesNotMatch(cell, /border:/, '弹层里那一格不该再画框——框在弹层内边距处会被裁掉半条边');
+});
+
+test('分组框跟着组内方块的外接矩形走，并且能复位', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'fit.html');
+  const ov = sect(html, 'view-overview');
+  assert.match(ov, /data-group-id="g1"[^>]*data-w="\d+"[^>]*data-h="\d+"/, '分组框没留原始尺寸，复位不回去');
+  const script = html.slice(html.lastIndexOf('<script>'));
+  assert.match(script, /function fitGroups\(\)/, '没有把分组框收紧到组内方块的逻辑');
+  assert.match(script, /if \(!isGroup\) fitGroups\(\)/, '拖动方块时分组框没跟着缩放');
+});
