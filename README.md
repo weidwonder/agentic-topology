@@ -1,190 +1,211 @@
 # agentic-topology
 
-**中文** · [English](./README.en.md)
+**English** · [中文](./README.zh-CN.md)
 
-把一个 agentic 应用的编排画成一张能点开下钻的图。
+Draw the orchestration of an agentic app as a diagram you can click into.
 
-指着一个仓库说一句「画一下这个项目的编排」，它读源码抽出**有哪些 AI、各自能用什么工具、程序段夹在中间干什么、谁调谁、传了什么**，产出一个**可离线打开的单文件网页**。
+Point it at a repo and say "draw this project's orchestration." It reads the source and pulls out
+**which AIs exist, what tools each one has, what the deterministic code between them does, who calls
+whom, and what gets handed over** — then renders **a single HTML file that opens offline**.
 
-![编排全貌](./assets/images/overview.png)
+![Orchestration overview](./assets/images/overview.png)
 
-上面这张是真的——从一个内控审计子模块（1500 行 TypeScript）读出来的：10 个方块、14 条连线。
-虚线橙框那个 AI 是「只是猜的」，右上角写着「这几处得你自己去核实 16 处」。
-**它只告诉你它查到了什么，不告诉你它觉得怎么样。**
+That screenshot is real output — read from an internal-audit module (1,500 lines of TypeScript):
+10 boxes, 14 connections. Fill color says only who is doing the work: blue for AI, orange for
+program, purple for branch point. The ⚠ badge in the corner of the two AI boxes means "there are
+things here you still need to verify yourself"; the top bar totals them as *4 things to verify*.
+**It tells you what it found, not what it thinks of it.**
 
-点开任何一个方块，能看到它的全部细节，**每一条都带着 `文件:行号`**：
+Click any box and its full detail opens in a panel — **every box and every connection carries a
+`file:line` citation**:
 
-![节点详情](./assets/images/detail.png)
+![Node detail](./assets/images/detail.png)
 
-方块多了就按堆收起来，收起来一个方块一条线都不会少：
+Too many boxes? Collapse them by group. Nothing is dropped when you do:
 
-![折叠视图](./assets/images/folded.png)
+![Folded view](./assets/images/folded.png)
 
 ---
 
-## 30 秒上手
+## 30 seconds
 
 ```bash
 npx agentic-topology install
 ```
 
-然后**对你的编码 agent 说一句话**：
+Then **say one sentence to your coding agent**:
 
-> 画一下这个项目的编排
+> draw this project's orchestration
 
-完了。图会出现在你的工作目录里，双击就能打开。
+That's it. The diagram lands in your working directory; double-click to open.
 
-**你不需要写任何描述文件、不需要敲任何其它命令。** 下一节解释为什么。
+**You never write a description file and never run another command.** The next section explains why.
 
 ---
 
-## 那个 `<描述文件>` 是什么？要我写吗？
+## What is `<description-file>`? Do I have to write it?
 
-**不用。你一个字都不用写。**
+**No. Not a single character.**
 
-这个项目里有个中间产物叫**编排描述**（`<主题>.topology.yaml`）。很多人第一眼看到命令行里的
-`<描述文件>` 会以为那是要自己填的表格——不是的。它是这样来的：
+There's an intermediate artifact here called an **orchestration description**
+(`<topic>.topology.yaml`). Seeing `<description-file>` in the CLI usage, people often assume it's a
+form they have to fill in. It isn't. Here's where it comes from:
 
 ```
-   你说一句「画一下这个项目的编排」
+   you say "draw this project's orchestration"
               ↓
-   agent 读源码，自己写出 <主题>.topology.yaml      ← 描述文件在这一步产生
+   the agent reads the source and writes <topic>.topology.yaml itself   ← created here
               ↓
-   校验器逐条检查它（不合格就拒绝出图，指名缺哪一项）
+   a validator checks it line by line (fails → no diagram, and it names what's missing)
               ↓
-   渲染成 <主题>.topology.html                      ← 你双击打开的东西
+   rendered to <topic>.topology.html                                    ← what you open
 ```
 
-**描述文件是 agent 写给校验器看的，不是给你填的。** 它存在的唯一理由是：
+**The description is written by the agent for the validator — not by you.** It exists for exactly
+one reason:
 
-> 让**模型负责"读懂"**，让**确定性程序负责"决定这份东西能不能变成图"**。
+> Let the **model do the reading**, and let a **deterministic program decide whether what it read
+> is allowed to become a diagram**.
 >
-> 模型可以读错、可以读不全，但它**不能绕过校验**——缺一项必填、编一个不存在的节点 ID、
-> 把「只是猜的」标成「查实了」，校验器当场拒绝出图并指名是哪一处。
-> 这条边界就是这张图为什么敢给你看的原因。
+> The model may misread or read partially. What it *cannot* do is bypass the check — omit a required
+> field, invent a node ID that doesn't exist, or label a guess as verified. The validator refuses to
+> render and points at the exact spot. That boundary is why this diagram is worth trusting.
 
-它落盘留在那里，还有两个好处：**你可以直接改**（改完重新出图），以及
-**下次重跑时能续上**（`analysis_complete: false` 的描述会保留已有的方块和连线）。
+Keeping it on disk buys two more things: **you can edit it directly** (then re-render), and
+**a later run can resume** — a description with `analysis_complete: false` keeps the boxes and
+connections already found.
 
-### 什么时候才轮到你敲命令
+### When you actually type a command
 
-只有两种情况：
+Only two cases:
 
-| 情况 | 敲什么 |
+| Case | Command |
 |---|---|
-| 你手上已经有一份写好的描述，只想出图 | `npx agentic-topology render <描述文件>` |
-| 你改了描述文件，想看看合不合格 | `npx agentic-topology validate <描述文件>` |
+| You already have a description and just want the diagram | `npx agentic-topology render <description-file>` |
+| You edited a description and want to check it | `npx agentic-topology validate <description-file>` |
 
-平时走上面那条路径，这两条你都用不上。
+On the normal path you need neither.
 
 ---
 
-## 它到底画了什么
+## What ends up on the diagram
 
-| 图上有 | 说明 |
+| On the diagram | What it means |
 |---|---|
-| **AI / 程序 / 岔路口** | 三类方块，一眼分得清哪些是模型在干、哪些是确定性代码在干 |
-| **每个 AI 的提示词** | 写在哪个文件哪几行，点开直接展开那一段 |
-| **工具 / MCP / Skill** | 每个 AI 手上有什么，以及"一个都没有"和"没查出来"是两回事 |
-| **它什么时候会停下** | 步数、时间、成本、连续失败——四项都要有，没设就明写「没设」 |
-| **谁调谁、传了什么** | 每条连线带触发条件、载体、并发控制，以及每个传递物「什么时候产生」「什么时候传递」 |
-| **在哪结束** | 正常结束、异常结束、被取消，三类终点都列出来 |
-| **查得准不准** | 每个方块每条线都标着「查实了 / 只是猜的 / 没查出来」，可以按这个筛选 |
-| **要你核实的清单** | 所有「只是猜的」和「没查出来」单独列一张表，附上来源与查证时间 |
+| **AI / program / branch point** | Three box types split by fill color — AI blue, program orange, branch point purple — so it's obvious what a model does vs. what deterministic code does |
+| **Each AI's system prompt** | Which file, which lines — click to expand that exact range |
+| **Tools / MCP / Skills** | What each AI has. "None" is written as `[]`; "couldn't determine" gets a ⚠ badge instead, so the two never blur together |
+| **When it stops** | Steps, time, cost, consecutive failures — all four, and "not set" is stated explicitly |
+| **Who calls whom, carrying what** | Every connection carries its trigger, carrier, concurrency control, and for each payload *when it's produced* and *when it's handed over* |
+| **Where it starts and where it ends** | Bracketing the canvas: the entry path sits above the diagram, and the normal, abnormal, and cancelled exits below it |
+| **How sure it is** | Four levels: landed (verified) / inferred (a guess) / missing (couldn't determine) / by design. All four carry a badge; the last three also get a dashed border. You can filter on it |
+| **Verify-this list** | A ⚠ badge in the corner of the box it belongs to, or a tooltip on the connection; the top bar carries only the total — click the thing you want to check, no separate table to hunt through |
+| **Laid out the way you want** | Boxes and groups drag, connections re-route live; "save the positions into this file" writes them back into the same HTML so it opens that way next time (browsers without the File System Access API download a new copy for you to overwrite instead), and one click restores the automatic layout |
 
-**它不评价架构好坏，也不给改进建议。** 用途是让你**看清楚到能自己下判断**。
+Every prose field (boxes, detail, entry, exits, stop conditions, payloads) goes through Markdown, so
+long sentences aren't broken up by whatever hand-wrapping the YAML happened to have.
+
+**It does not judge your architecture or suggest improvements.** The point is to let you see clearly
+enough to judge for yourself.
 
 ---
 
-## 安装
+## Install
 
 ```bash
-# Claude Code（默认）
+# Claude Code (default)
 npx agentic-topology install
 
 # Codex
 npx agentic-topology install --agent codex
 
-# 装到指定目录
+# A directory you pick
 npx agentic-topology install --dir path/to/skills/agentic-topology
 ```
 
-装进去的只有交付物（`SKILL.md` + `references/` + `assets/` + `scripts/`），不带测试和开发文档。
+Only the deliverables are copied (`SKILL.md` + `references/` + `assets/` + `scripts/`) — no tests, no
+development docs.
 
-重装会**先清空目标目录**再装（留着上一版的文件，agent 会同时读到两份互相矛盾的规则）。
-正因为要清空，安装前有四道闸：目标是当前目录或它的上层 → 拒绝；是本技能源码的上层 → 拒绝；
-目标已存在、非空、且里面没有本技能的 `SKILL.md` → 拒绝并**不删任何东西**，让你自己确认。
-所以 `--dir .` 这类手滑不会清掉你的工作目录。
+Reinstalling **wipes the target directory first** (leftover files from an older version would leave
+the agent reading two contradictory rulebooks at once). Because it wipes, four guards run before
+anything is deleted: the target is the skill's own source directory → refused; it is the current
+directory or an ancestor of it → refused; it is an ancestor of the skill's own source → refused;
+it already exists, is non-empty, and holds no `SKILL.md` of this skill → refused **without deleting
+anything**, so you can confirm yourself. A slip like `--dir .` cannot wipe your working directory.
 
-**要求**：Node ≥ 18。**零 npm 依赖**，不联网，不上传你的代码。
+**Requires** Node ≥ 18. **Zero npm dependencies.** No network access, and your code is never uploaded.
 
 ---
 
-## 命令行
+## CLI
 
 ```bash
-npx agentic-topology install  [--agent claude|codex] [--dir <目录>]
-npx agentic-topology render   <描述文件> [-o <输出.html>] [--force]
-npx agentic-topology validate <描述文件> [--format json]
+npx agentic-topology install  [--agent claude|codex] [--dir <dir>]
+npx agentic-topology render   <description-file> [-o <output.html>] [--force]
+npx agentic-topology validate <description-file> [--format json]
 ```
 
-退出码：`0` 通过 · `2` 校验不通过 · `3` 语法错或文件读不了 · `1` 程序自身异常
+Exit codes: `0` ok · `2` validation failed · `3` syntax error or file unreadable · `1` internal error
 
-校验不通过时**不会产出任何 HTML**，而是逐条打印哪个方块、哪条线、缺哪一项。
+When validation fails **no HTML is produced at all** — instead it prints which box, which line, and
+which field is missing.
 
 ---
 
-## 它守着哪些边界
+## Boundaries it holds
 
-这些不是"设计理念"，是写进测试、改了就红的约束：
+These aren't design aspirations. They're constraints with tests behind them:
 
-| 约束 | 怎么保证的 |
+| Constraint | How it's enforced |
 |---|---|
-| **全程只读你的项目** | 分析前后 `git status` 逐字节一致；渲染器**拒绝**把图写进被分析的项目里 |
-| **只有一处能写文件** | 全仓只有 `scripts/lib/write-output.mjs` 碰文件系统写操作，测试按调用形态与 `node:fs` 具名导入两条断言 |
-| **同一份描述出一样的图** | 描述与被分析项目都没变时，两次渲染逐字节相同。没有时间戳、没有随机数、没有依赖迭代顺序的地方。唯一会随外部变化的是「这张图可能已经过期」那条提示——它读的是源码文件的修改时间，本来就该跟着变 |
-| **不把猜的说成查实的** | 校验器拦住「只有文档来源却标查实了」；三档可信度在图上分别是实线、虚线、灰显 |
-| **不静默裁掉东西** | 方块多了靠分堆折叠和筛选解决，折叠后再展开逐个 ID 相同 |
-| **不联网** | 零依赖，产物是单文件 HTML，断网能看 |
-| **技能是自足的** | 不引用、不依赖任何其它技能，有测试扫全部交付物 |
+| **Your project is only ever read** | The renderer **refuses** to write the diagram inside the analyzed project, and a test holds that. The analysis side is held by the extraction discipline rather than by a test — check it yourself with `git status` before and after |
+| **Exactly one place writes files** | Only `scripts/lib/write-output.mjs` touches filesystem writes; asserted on both call shape and `node:fs` named imports |
+| **Same description, same diagram** | Byte-identical when neither the description nor the analyzed project has changed. No timestamps, no randomness, nothing depending on iteration order. The one thing that does track outside change is the "this diagram may be stale" notice — it reads source-file mtimes, which is exactly what it's for. (Positions you drag live in that HTML file itself; re-rendering returns to the computed layout) |
+| **Guesses are never shown as facts** | The validator rejects "documentation-only source but marked verified"; fill color carries type only, while confidence gets its own channel — a dashed border plus a badge |
+| **Nothing is silently dropped** | Crowding is handled by folding and filtering; unfold restores every ID |
+| **No network** | Zero dependencies; the output is one HTML file that works offline. Even the Markdown in the page goes through a tiny renderer that ships with it — no CDN, no external assets |
+| **The skill is self-contained** | It references and depends on no other skill, with a test scanning every deliverable |
 
 ---
 
-## 仓库结构
+## Repository layout
 
 ```
-agentic-topology/        技能本体与命令行——npm 包发布的就是这个目录
-  SKILL.md                 给 agent 读的入口：三步流程与加载点清单
-  references/              四份契约：编排描述格式 / 节点粒度约定 / 抽取纪律 / 界面用语表
-  scripts/                 校验器、布局、渲染器
-  assets/                  页面骨架与一份可以直接改的最小样例
-  bin/                     npx 入口与安装器
-  tests/                   测试套件，node:test，零依赖（`npm test`）
+agentic-topology/        the skill and CLI — this directory is what the npm package ships
+  SKILL.md                 the agent's entry point: four-step flow and when to load what
+  references/              four contracts: description format / node granularity / extraction discipline / UI wording
+  scripts/                 validator, layout, renderer
+  assets/                  page shell and a minimal example you can edit directly
+  bin/                     npx entry point and installer
+  tests/                   test suite, node:test, zero dependencies (`npm test`)
 
-docs/                    开发过程的东西，装技能时不会带过去
-  spec/ plan/ report/      需求、计划、实测报告
-  images/                  上面那几张图
+assets/images/           the screenshots above; they serve the README only and are not installed
 ```
 
 ---
 
-## 现在做到了什么、还差什么
+## What works today, and what doesn't
 
-**做得到**：拿一份填好的描述出图、校验并逐条报错、分堆折叠、按可信度与类型筛选、
-节点与连线下钻、提示词按行区间展开、核对清单、二次生成不覆盖、过期提示。
+**Works**: rendering from a filled-in description, validation with per-field errors, group folding,
+filtering by confidence and type, box and connection drill-down in a panel, prompt ranges expanded inline,
+verify badges, drag-to-arrange with positions saved back into the file, non-clobbering regeneration,
+staleness notices.
 
-**还差**：上线线要求**在 3 个真实项目上 agent 节点与调用边遗漏 = 0**，目前**未达标**，欠三笔：
+**Missing**: the ship line requires **zero missed agent nodes and zero missed call edges across 3
+real projects**. It is **not met**. Three things are outstanding:
 
-1. **第三个基准项目**——已跑的那个第三方，划范围时把装配系统提示词的那个包排除在外了，
-   而 Agent 的判据恰恰是"看系统提示词"；且本技能自己的一份必读文档拿它举过例、
-   写着答案，盲测在设计上就不可能盲。整轮作废。
-2. **前两个项目的粒度留账**——"调用边遗漏 = 0"这个口径靠"合并进节点内部的传递 MUST 留账"
-   兜底，那是它唯一的防作弊位。没有留账，把切法调粗、让传递沉进节点里就能刷出 0。
-   所以那两个 0 目前只是「测出来是 0」，**不是「认定为 0」**。
-3. 从没有任何一轮同时满足：范围正确 + 留账齐全 + 未泄题。
+1. **A third benchmark project.** The one we ran excluded the very package that assembles the system
+   prompt — while "which system prompt is assembled" is exactly the criterion for what counts as an
+   Agent. On top of that, one of this skill's own mandatory-load references uses that project as a
+   worked example and states the answer, so the blind test could not be blind. That round is void.
+2. **A granularity ledger for the first two projects.** The "zero missed edges" metric leans on
+   "a merge into a node MUST be recorded" — that record is its only anti-gaming check. Without it,
+   coarsening the cut until transfers sink inside nodes scores a zero while information is genuinely
+   lost. So those two zeros are "measured as zero," not "established as zero."
+3. No single round has yet satisfied all three at once: correct scope, complete ledger, no leak.
 
-**已知不足**：运行时追踪（只读静态源码，读不出运行期才决定的分支）、提示词导出脱敏、
-表达不了"一个会话内部的阶段"。
+**Known gaps**: runtime tracing (it reads static source, so branches decided at runtime are
+invisible), prompt redaction on export, and no way to express "a phase inside a single session."
 
 ---
 
