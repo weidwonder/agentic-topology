@@ -80,3 +80,41 @@ test('HTML 转义，且内嵌数据块可安全取回', () => {
   const d = dataOf(html);
   assert.equal(d.nodes[0].responsibility, `<script>alert(1)</script>&"'`);
 });
+
+test('发起说明走 Markdown 渲染，占满整条宽度', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'md.html');
+  const ov = sect(html, 'view-overview');
+  assert.match(ov, /class="topo-md"/, '发起说明没有走 Markdown 容器');
+  const css = html.match(/<style[\s\S]*?<\/style>/g).join('');
+  assert.match(css, /\.topo-pill\s*\{[^}]*width:\s*100%/, '发起说明没占满宽度');
+});
+
+test('方块与分组框半透明，底下的连线看得见', () => {
+  const css = renderOk(FX('three-groups.topology.yaml'), 'alpha.html')
+    .match(/<style[\s\S]*?<\/style>/g).join('');
+  for (const [selector, name] of [[/\.topo-node\s*\{[^}]*/, '方块'], [/\.topo-frame\s*\{[^}]*/, '分组框']]) {
+    const rule = css.match(selector)[0];
+    assert.match(rule, /transparent/, `${name}不透明，会把连线整个盖住`);
+  }
+});
+
+test('方块和分组都能拖，位置能存回文件', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'drag.html');
+  const ov = sect(html, 'view-overview');
+  assert.match(ov, /data-group-id="g1"[^>]*data-x="/, '分组框没有可复位的原始坐标');
+  assert.match(ov, /data-node-id="N1"[^>]*data-x="/, '方块没有可复位的原始坐标');
+  assert.match(ov, /data-save-layout/, '没有存回文件的入口');
+  assert.match(ov, /data-reset-layout/, '没有恢复自动摆放的入口');
+  const script = html.slice(html.lastIndexOf('<script>'));
+  assert.match(script, /showSaveFilePicker/, '没接浏览器写文件能力');
+  assert.match(script, /positions/, '位置没有进内嵌数据块');
+  assert.match(script, /redrawEdges/, '拖动后连线不会跟着重画');
+});
+
+test('弹层默认藏着：display:flex 不能盖掉 [hidden]', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'modal.html');
+  assert.match(sect(html, 'topo-modal'), /id="topo-modal" hidden/, '弹层默认没藏起来');
+  const css = html.match(/<style[\s\S]*?<\/style>/g).join('');
+  assert.match(css, /\.topo-modal\[hidden\]\s*\{[^}]*display:\s*none/,
+    '缺这条规则弹层会一直挂在屏幕上');
+});

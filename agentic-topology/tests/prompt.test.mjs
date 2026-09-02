@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { FX, renderOk, sect, dataOf } from './helpers.mjs';
 
 test('行区间被内嵌并高亮，区间外的行不带进来', () => {
-  const d = sect(renderOk(FX('base.topology.yaml'), 'pr.html'), 'view-node-detail');
+  const d = sect(renderOk(FX('base.topology.yaml'), 'pr.html'), 'detail-store');
   assert.match(d, /topo-src-body/);
   assert.match(d, /你是规划师。/);                      // 第 1 行在区间内
   assert.match(d, /不许调用任何写文件的工具。/);          // 第 6 行在区间内
@@ -13,7 +13,7 @@ test('行区间被内嵌并高亮，区间外的行不带进来', () => {
 });
 
 test('文件名与行号恒常可见', () => {
-  const d = sect(renderOk(FX('base.topology.yaml'), 'pr.html'), 'view-node-detail');
+  const d = sect(renderOk(FX('base.topology.yaml'), 'pr.html'), 'detail-store');
   assert.match(d, /planner\.v2\.md/);
   assert.match(d, /第\s*1[–\-]6\s*行/);
 });
@@ -30,7 +30,7 @@ test('相对路径以描述文件所在目录为基准', async () => {
 
 test('读不到时照常出图，该项进核对清单，且不拒绝出图', () => {
   const html = renderOk(FX('prompt-missing.topology.yaml'), 'pm.html');
-  const d = sect(html, 'view-node-detail');
+  const d = sect(html, 'detail-store');
   assert.match(d, /读不到这个文件的第/);
   assert.match(d, /nope\.md/, '读不到也要显示文件名');
   const cl = dataOf(html).checklist;

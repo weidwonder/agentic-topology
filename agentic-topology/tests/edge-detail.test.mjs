@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { FX, renderOk, sect } from './helpers.mjs';
 
 const seg = (fx, out, key) => {
-  const d = sect(renderOk(FX(fx), out), 'view-node-detail');
+  const d = sect(renderOk(FX(fx), out), 'detail-store');
   const i = d.indexOf(`data-edge-detail="${key}"`);
   assert.ok(i >= 0, `没有 ${key} 的边详情容器`);
   const j = d.indexOf('data-edge-detail=', i + 1);
