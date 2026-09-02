@@ -44,6 +44,7 @@ function majorityCategory(edges) {
 
 function conservativeConfidence(edges) {
   if (edges.some((edge) => edge.confidence === 'unread')) return 'unread';
+  if (edges.some((edge) => edge.confidence === 'design')) return 'design';
   if (edges.some((edge) => edge.confidence === 'inferred')) return 'inferred';
   return 'certain';
 }

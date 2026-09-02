@@ -72,7 +72,18 @@ function boxOf(element) {
   };
 }
 
-function routeEdge(from, to) {
+// 来回两条边（A→B 与 B→A）在这里会算出同一条曲线、只是首尾颠倒，叠上去就只剩一条。
+// 两条边方向相反、法线也相反，所以两边都朝各自的法线让开同样的距离，就分到了路径两侧。
+// 这个值 MUST 与 scripts/lib/layout.mjs 的 EDGE_PAIR_OFFSET 一致，否则拖动前后错开量会变。
+const PAIR_OFFSET = 10;
+
+/** 一条边要不要错开：只有反向边也在图上时才错，单向边照旧走正中间。 */
+function pairSeparation(edgeKeys, fromId, toId) {
+  if (fromId === toId) return 0;
+  return edgeKeys.has(`${toId}->${fromId}`) ? PAIR_OFFSET : 0;
+}
+
+function routeEdge(from, to, separation) {
   const fromMid = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
   const toMid = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
   const dx = toMid.x - fromMid.x;
@@ -94,6 +105,19 @@ function routeEdge(from, to) {
     c1 = { x: start.x, y: start.y + (dy >= 0 ? offset : -offset) };
     c2 = { x: end.x, y: end.y - (dy >= 0 ? offset : -offset) };
   }
+  if (separation) {
+    const length = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+    // 只沿卡片那条边滑动：起终点贴在边框上，往边框外挪要么缩到卡片底下，要么空出一道缝。
+    // 上面挑边时已按 dx/dy 谁大定了从哪条边出去，这里跟着那个判断取分量即可。
+    const shift = Math.abs(dx) >= Math.abs(dy)
+      ? { x: 0, y: ((end.x - start.x) / length) * separation }
+      : { x: (-(end.y - start.y) / length) * separation, y: 0 };
+    const move = (point) => ({ x: point.x + shift.x, y: point.y + shift.y });
+    start = move(start);
+    end = move(end);
+    c1 = move(c1);
+    c2 = move(c2);
+  }
   const round = (value) => Math.round(value * 10) / 10;
   const mid = {
     x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
@@ -109,14 +133,16 @@ function routeEdge(from, to) {
 
 function redrawEdges() {
   const nodes = new Map([...document.querySelectorAll('.topo-node')].map((el) => [el.dataset.nodeId, el]));
+  const paths = [...document.querySelectorAll('#view-overview path[data-edge-id]')];
+  const edgeKeys = new Set(paths.map((path) => path.dataset.edgeId));
   const seen = new Set();
-  for (const path of document.querySelectorAll('#view-overview path[data-edge-id]')) {
+  for (const path of paths) {
     const key = path.dataset.edgeId;
     const [fromId, toId] = key.split('->');
     const from = nodes.get(fromId);
     const to = nodes.get(toId);
     if (!from || !to) continue;
-    const geometry = routeEdge(boxOf(from), boxOf(to));
+    const geometry = routeEdge(boxOf(from), boxOf(to), pairSeparation(edgeKeys, fromId, toId));
     path.setAttribute('d', geometry.d);
     if (seen.has(key)) continue;
     seen.add(key);

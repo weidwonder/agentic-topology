@@ -23,7 +23,10 @@ const WORDS = {
   },
   context: { full: '全都看得见', isolated: '各看各的', mixed: '一部分看得见' },
   kind: { agent: 'AI', program: '程序', decision: '岔路口' },
-  confidence: { certain: '查实了', inferred: '只是猜的', unread: '没查出来' },
+  exitKind: { normal: '正常收尾', abnormal: '出岔子', cancelled: '被叫停' },
+  confidence: {
+    certain: '已落地（查实）', inferred: '推测（只是猜的）', unread: '缺失（没查出来）', design: '设计中',
+  },
   category: {
     normal: '正常往下走',
     pass_or_skip: '通过或跳过',
@@ -38,7 +41,7 @@ const WORDS = {
     skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设',
     checklist: '这几处得你自己去核实',
     start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
-    close: '关闭', saveLayout: '把位置存回这个文件', resetLayout: '恢复自动摆放',
+    close: '关闭', saveLayout: '把位置存回这个文件', resetLayout: '恢复自动摆放', nodeState: '方块情况',
     dragHint: '方块和分组都能拖；拖完点「把位置存回这个文件」，下次打开还是这个样子',
     concurrent: '同时干', items: '件', fan: '会派别人', noFan: '不会派别人', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
@@ -72,14 +75,37 @@ function optional(item) {
   return value(item, '未填写');
 }
 
-function flag(confidence) {
-  const cls = confidence === 'certain' ? 'is-sure' : confidence === 'inferred' ? 'is-guess' : 'is-unknown';
-  return `<span class="topo-flag ${cls}">${value(WORDS.confidence[confidence] || confidence)}</span>`;
+const FLAG_CLASS = {
+  certain: 'is-sure', inferred: 'is-guess', unread: 'is-unknown', design: 'is-design',
+};
+
+// 卡片顶栏就那么宽，「推测（只是猜的）」这种全称会把徽章挤成两行、顶掉正文的位置。
+// 卡片上只写括号前那半截，全称留给筛选器和详情弹层——两处说的是同一件事，MUST 保持同源。
+const SHORT_CONFIDENCE = Object.fromEntries(
+  Object.entries(WORDS.confidence).map(([key, label]) => [key, label.replace(/（.*）$/, '')]),
+);
+
+function flag(confidence, short = false) {
+  const cls = FLAG_CLASS[confidence] || 'is-unknown';
+  const words = short ? SHORT_CONFIDENCE : WORDS.confidence;
+  return `<span class="topo-flag ${cls}" title="${esc(WORDS.confidence[confidence] || confidence)}">` +
+    `${value(words[confidence] || confidence)}</span>`;
 }
 
-function nodeHtml(node, box) {
+/** 正文字段一律走 Markdown：描述里常有分段、列表、行内代码，纯文本会糊成一坨。 */
+function prose(text, fallback = WORDS.labels.notSet) {
+  const raw = text === undefined || text === null || text === '' || text === 'not_set'
+    ? (text === 'not_set' ? WORDS.labels.notSet : fallback)
+    : text;
+  return `<div class="topo-md">${renderMarkdown(String(raw))}</div>`;
+}
+
+function nodeHtml(node, box, checklist = []) {
   const confidence = node.confidence || 'unread';
-  const classes = ['topo-node', node.kind === 'agent' ? 'is-agent' : '', confidence !== 'certain' ? 'is-guess' : ''];
+  // 底色只表示「这是 AI 还是程序还是岔路口」，可信度改用虚线边框 + 徽章表示。
+  // 两个维度都塞进底色的话，一份全是「推测」的设计稿会整张图一个颜色，等于没分类。
+  const kindClass = { agent: 'is-agent', program: 'is-program', decision: 'is-decision' }[node.kind] || '';
+  const classes = ['topo-node', kindClass, confidence === 'certain' ? '' : 'is-unsure'];
   const marks = [];
   if (Number(node.concurrency?.default) > 1) {
     marks.push(`<span class="topo-mark is-conc">${WORDS.labels.concurrent} ` +
@@ -89,15 +115,24 @@ function nodeHtml(node, box) {
     marks.push(`<span class="topo-mark is-fan">${WORDS.labels.fan}</span>`);
   }
   const labels = WORDS.kind;
+  // 核对清单不再单列一块：本节点该核实的条目收成右上角一枚角标，鼠标停上去就看得到。
+  const mine = checklist.filter((item) => item.ref === node.id);
+  const warn = mine.length
+    ? `<span class="topo-warn" title="${esc(mine.map((item) => item.text).join('\n'))}"` +
+      ` aria-label="${esc(WORDS.labels.checklist)}">⚠ ${mine.length}</span>`
+    : '';
   const top = `<div class="topo-node-top"><span class="topo-node-kind">${value(labels[node.kind])}</span>` +
-    `<span class="topo-node-id">${value(node.id)}</span>${flag(confidence)}</div>`;
+    `<span class="topo-node-id">${value(node.id)}</span>${flag(confidence, true)}${warn}</div>`;
   // data-x / data-y 留着「恢复自动摆放」时用：拖过之后要能退回程序算出来的原位。
   const head = `<div class="${classes.filter(Boolean).join(' ')}" data-node-id="${value(node.id)}"` +
     ` data-goto="${value(node.id)}" data-group="${value(node.group, '')}"` +
     ` data-x="${box.x}" data-y="${box.y}"` +
-    ` style="left:${box.x}px;top:${box.y}px;width:${box.w}px;height:${box.h}px">`;
+    // 用 min-height 而不是 height：高度是程序按字数估出来的，卡片正文又走 Markdown（列表、分段都会
+    // 多占几行），估少了就又会溢出到别的元素上。min-height 让浏览器按真实内容兜底，宁可比连线锚点
+    // 略高一点，也 MUST NOT 让文字漏出卡片。
+    ` style="left:${box.x}px;top:${box.y}px;width:${box.w}px;min-height:${box.h}px">`;
   return `${head}${top}<div class="topo-node-name">${value(node.name)}</div>` +
-    `<div class="topo-node-desc">${value(node.responsibility)}</div>` +
+    `<div class="topo-node-desc">${prose(node.responsibility)}</div>` +
     (marks.length ? `<div class="topo-marks">${marks.join('')}</div>` : '') + '</div>';
 }
 
@@ -111,17 +146,24 @@ function overview(data, pageLayout, staleness) {
       edge.category === 'reject_or_halt' ? 'is-back' : 'is-main';
     const trust = edge.confidence === 'certain' ? '' : ` is-${edge.confidence}`;
     const edgeId = `${edge.from}->${edge.to}`;
+    // 连线的核实条目挂在加宽的点击区上：SVG 里 <title> 就是原生悬浮提示，不用另写脚本。
+    const mine = (data.checklist || []).filter((item) => item.ref === edgeId);
+    const tip = mine.length
+      ? `<title>${esc(mine.map((item) => item.text).join('\n'))}</title>` : '';
     return `<path class="topo-edge ${cls}${trust}" data-edge-id="${value(edgeId)}"` +
       ` d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
-      `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}"/>` +
+      `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}">${tip}</path>` +
       `<text class="topo-elabel" data-edge-id="${value(edgeId)}" x="${edge.labelX}"` +
       ` y="${edge.labelY}">${value(edge.label)}</text>`;
   }).join('');
+  const checklist = data.checklist || [];
   const nodes = [...pageLayout.nodes.entries()].map(([id, box]) =>
-    nodeHtml(data.nodes.find((node) => node.id === id), box)).join('');
+    nodeHtml(data.nodes.find((node) => node.id === id), box, checklist)).join('');
+  // 「在哪结束」与「从哪开始」同一套渲染：一个小标题 + Markdown 正文，两块看起来 MUST 一致。
   const exits = (data.graph?.exits || []).map((exit) =>
-    `<li class="list-item"><span class="badge">${value(exit.name)}</span>` +
-    `<span class="text-xs grow">${value(exit.condition)}</span></li>`).join('');
+    `<div class="topo-exit"><div class="topo-exit-name">${value(exit.name)}` +
+    `<span class="topo-exit-kind">${value(WORDS.exitKind[exit.kind] || exit.kind, '')}</span></div>` +
+    `${prose(exit.condition)}</div>`).join('');
   const incompleteNotice = data.analysis_complete === false
     ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : '';
   const staleNotice = staleness?.stale
@@ -134,6 +176,7 @@ function overview(data, pageLayout, staleness) {
   const markers = `<defs>${marker('ah-main', 'var(--primary)')}${marker('ah-ok', 'var(--success)')}` +
     `${marker('ah-back', 'var(--destructive)')}</defs>`;
   const head = `<section id="view-overview" class="view"><div class="app-bar">` +
+    `<span class="topo-title">${value(data.source_project, WORDS.labels.overview)}</span>` +
     `<span class="topo-crumb">${WORDS.labels.overview}</span><span class="grow"></span>` +
     `<button class="btn btn-outline btn-sm" data-goto-folded>${esc(WORDS.labels.folded)}</button>` +
     `</div><div class="screen">` +
@@ -165,18 +208,12 @@ function overview(data, pageLayout, staleness) {
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
     ` aria-hidden="true">${markers}${edges}</svg>${frames}${nodes}</div></div>`;
-  const ending = `<div class="card card-compact"><div class="card-header"><div class="card-title">` +
-    `${esc(WORDS.labels.end)}</div></div>` +
-    `<div class="card-content"><ul class="list">${exits}</ul></div></div></div></section>`;
-  const checklist = (data.checklist || []).map((item) =>
-    `<li class="list-item"><span class="text-xs grow">${value(item.text)}</span></li>`).join('');
-  // 核对清单常常有几十条，摊平铺满一整屏——默认收起，点开后自己滚，不拖累整页长度。
-  const checklistCard = `<div class="card card-compact"><div class="topo-acc"><details class="topo-acc-item">` +
-    `<summary class="topo-acc-head">${esc(WORDS.labels.checklist)}` +
-    `<span class="topo-acc-mark">${data.checklist?.length || 0} 处</span></summary>` +
-    `<div class="topo-acc-body topo-checklist-scroll"><ul class="list">${checklist}</ul></div>` +
-    `</details></div></div>`;
-  return `${head}${diagram}${checklistCard}${ending}`;
+  // 收尾块与发起块共用 .topo-pill 这一套外观，两头 MUST 看起来是一对。
+  const ending = `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.end)}</div>` +
+    `${exits}</div></div></section>`;
+  // 核对清单不再单开一块：条目已经挂到各自的方块与连线上（右上角角标 / 线上的悬浮提示），
+  // 顶部只留一个总数，省得同一份信息在页面上出现两遍。
+  return `${head}${diagram}${ending}`;
 }
 
 function filterControls(data) {
@@ -187,7 +224,8 @@ function filterControls(data) {
     .map(([key, label]) => checkbox('confidence', key, label)).join('');
   const kinds = Object.entries(WORDS.kind).map(([key, label]) => checkbox('kind', key, label)).join('');
   const groups = (data.groups || []).map((group) => checkbox('group', group.id, group.name)).join('');
-  return `<div class="topo-filters"><fieldset><legend>查得准不准</legend>${confidence}</fieldset>` +
+  return `<div class="topo-filters"><fieldset><legend>${esc(WORDS.labels.nodeState)}</legend>` +
+    `${confidence}</fieldset>` +
     `<fieldset><legend>AI 还是程序</legend>${kinds}</fieldset>` +
     `<fieldset><legend>分堆</legend>${groups || '<span class="muted text-xs">没有分堆</span>'}</fieldset></div>`;
 }
@@ -247,7 +285,7 @@ function abilities(node) {
 function stopSection(node) {
   if (node.kind !== 'agent') return '';
   const conditions = (node.stop?.conditions || []).map((condition) =>
-    `<li class="list-item"><span class="text-sm">${value(condition)}</span></li>`).join('');
+    `<li class="list-item">${prose(condition)}</li>`).join('');
   const rows = Object.entries(node.stop?.limits || {})
     .map(([key, item]) => kv(WORDS.labels.limits[key] || key, value(item))).join('');
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.stop)}</summary>` +
@@ -274,11 +312,11 @@ function linksSection(node, data) {
 function detail(data, node, enriched) {
   const group = (data.groups || []).find((item) => item.id === node.group);
   const rows = [
-    kv(WORDS.labels.what, value(node.responsibility)),
-    kv(WORDS.labels.inputs, value(node.inputs)),
-    kv(WORDS.labels.outputs, value(node.outputs)),
+    kv(WORDS.labels.what, prose(node.responsibility)),
+    kv(WORDS.labels.inputs, prose(node.inputs)),
+    kv(WORDS.labels.outputs, prose(node.outputs)),
   ];
-  if (node.kind !== 'agent') rows.push(kv(WORDS.labels.purpose, value(node.purpose)));
+  if (node.kind !== 'agent') rows.push(kv(WORDS.labels.purpose, prose(node.purpose)));
   rows.push(kv(WORDS.labels.group, optional(group?.name)));
   rows.push(kv(WORDS.labels.concurrency, value(node.concurrency?.default)));
   const source = `<span class="mono text-xs">${value(node.source?.refs?.join(' · '))}` +
@@ -315,16 +353,16 @@ function edgeDetail(edge) {
     ` · ${esc(WORDS.labels.confirmedTime)}：${value(edge.source?.confirmed_at)}</span>`;
   const rows = [
     kv(WORDS.labels.edgeCategory, value(WORDS.category[edge.category] || edge.category)),
-    kv(WORDS.labels.trigger, value(edge.trigger)),
+    kv(WORDS.labels.trigger, prose(edge.trigger)),
     kv(WORDS.labels.carrier, value({
       file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
     }[edge.carrier] || edge.carrier)),
   ];
-  if (edge.screening !== undefined) rows.push(kv(WORDS.labels.screening, value(edge.screening)));
-  rows.push(kv(WORDS.labels.concurrencyControl, value(edge.concurrency_control)));
+  if (edge.screening !== undefined) rows.push(kv(WORDS.labels.screening, prose(edge.screening)));
+  rows.push(kv(WORDS.labels.concurrencyControl, prose(edge.concurrency_control)));
   rows.push(kv(WORDS.labels.source, source));
   const payloads = (edge.payloads || []).map((payload) => `<div class="topo-payload"><dl class="kv">` +
-    `${kv(WORDS.labels.payload, value(payload.content))}` +
+    `${kv(WORDS.labels.payload, prose(payload.content))}` +
     `${kv(WORDS.labels.producedAt, value(payload.produced_at))}` +
     `${kv(WORDS.labels.deliveredAt, value(payload.delivered_at))}</dl></div>`).join('');
   const body = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +

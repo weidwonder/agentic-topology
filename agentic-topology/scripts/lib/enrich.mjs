@@ -21,6 +21,7 @@ function itemText(level, ref, field) {
 }
 
 function addChecklist(list, level, ref, field, confidence, source, fallbackDate) {
+  // design 是「这块还在设计稿上，本来就没落地」，不是「你去核实一下」——MUST NOT 进核对清单。
   if (confidence !== 'inferred' && confidence !== 'unread') return;
   list.push({
     level,

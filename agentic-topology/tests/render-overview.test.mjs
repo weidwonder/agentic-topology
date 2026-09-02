@@ -22,13 +22,11 @@ test('回归：发起标记不再绝对定位盖住分组框，entry 多长都�
   assert.doesNotMatch(ov.slice(pillOpen, pillOpen + 60), /style="left:/, '发起标记不该再用像素坐标定位');
 });
 
-test('回归：核对清单默认收起，用折叠列表呈现而不是一次性铺满整屏', () => {
+test('核对清单不单开一块，条目挂到各自的方块上，鼠标停上去看得到', () => {
   const ov = sect(H(), 'view-overview');
-  assert.match(
-    ov,
-    /<details class="topo-acc-item"><summary class="topo-acc-head">这几处得你自己去核实/,
-    '核对清单应该用未展开的 <details> 折叠，不是一次性全铺开',
-  );
+  assert.doesNotMatch(ov, /topo-checklist-scroll/, '核对清单不该再单开一个区域');
+  assert.match(ov, /<span class="topo-warn" title="[^"]*需要你核实[^"]*"/, '方块上没有核实角标');
+  assert.match(ov, /这几处得你自己去核实 \d+ 处/, '顶部该保留一个总数');
 });
 
 test('节点一眼可读：图上直接有职责文字', () => {
@@ -117,4 +115,37 @@ test('弹层默认藏着：display:flex 不能盖掉 [hidden]', () => {
   const css = html.match(/<style[\s\S]*?<\/style>/g).join('');
   assert.match(css, /\.topo-modal\[hidden\]\s*\{[^}]*display:\s*none/,
     '缺这条规则弹层会一直挂在屏幕上');
+});
+
+test('设计态：design 是合法档位，图上标「设计中」，且不进核对清单', () => {
+  const html = renderOk(FX('design-state.topology.yaml'), 'design.html');
+  const ov = sect(html, 'view-overview');
+  assert.match(ov, /topo-flag is-design"[^>]*>设计中/, '设计态没有自己的徽章');
+  assert.match(ov, /value="design"><span>设计中/, '筛选里没有「设计中」这一档');
+  assert.doesNotMatch(ov, /topo-warn/, '设计态不该进核对清单——没落地的东西谈不上核实');
+  assert.match(ov, /这几处得你自己去核实 0 处/, '整份设计稿的核实条目应当为 0');
+});
+
+test('底色只分 AI / 程序 / 岔路口三类，可信度不抢底色', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'kinds.html');
+  const ov = sect(html, 'view-overview');
+  for (const [id, cls] of [['N3', 'is-agent'], ['N1', 'is-program'], ['N2', 'is-decision']])
+    assert.match(ov, new RegExp(`class="topo-node ${cls}[^"]*" data-node-id="${id}"`), `${id} 没按类型上色`);
+  const css = html.match(/<style[\s\S]*?<\/style>/g).join('');
+  for (const [cls, color] of [['is-agent', '#2563eb'], ['is-program', '#d97706'], ['is-decision', '#7c3aed']])
+    assert.match(css, new RegExp(`\\.topo-node\\.${cls}[^}]*${color}`), `${cls} 没有自己的底色`);
+});
+
+test('正文一律走 Markdown：卡片、详情、两头的说明都是', () => {
+  const html = renderOk(FX('three-groups.topology.yaml'), 'md2.html');
+  const ov = sect(html, 'view-overview');
+  assert.match(ov, /topo-node-desc"><div class="topo-md">/, '卡片正文没走 Markdown');
+  assert.match(ov, /topo-pill-head">从哪开始<\/div><div class="topo-md">/, '发起说明没走 Markdown');
+  assert.match(ov, /topo-pill-head">在哪结束<\/div><div class="topo-exit">/, '收尾块没跟发起块统一');
+  assert.match(sect(html, 'detail-store'), /<div class="topo-md">/, '详情正文没走 Markdown');
+});
+
+test('标题栏有这张图是谁的', () => {
+  const ov = sect(renderOk(FX('three-groups.topology.yaml'), 'title.html'), 'view-overview');
+  assert.match(ov, /class="topo-title">tests\/fixtures\/fake-project</, '标题栏没有拓扑标题');
 });
