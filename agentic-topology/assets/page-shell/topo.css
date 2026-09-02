@@ -23,7 +23,10 @@
 .topo-node-desc { font-size: 10.5px; color: var(--muted-foreground); line-height: 1.4; margin-top: 3px; }
 .topo-node-kind { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; background: var(--card); color: var(--muted-foreground); border: 1px solid var(--border); }
 .topo-node-go { margin-left: auto; display: inline-flex; padding: 1px 5px; border-radius: 999px; font-size: 10px; background: var(--primary); color: var(--primary-foreground); }
-.topo-pill { z-index: 2; position: absolute; box-sizing: border-box; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--primary); background: var(--card); font-size: 11px; color: var(--primary); text-align: center; }
+/* 正常文档流里的一块，不再绝对定位盖在图上——entry 文本多长，浏览器就自己撑多高。 */
+.topo-pill { display: block; box-sizing: border-box; margin-bottom: 12px; padding: 8px 12px; max-width: 720px;
+  border-radius: var(--radius); border: 1px dashed var(--primary); background: var(--card); font-size: 11px;
+  color: var(--primary); white-space: pre-line; }
 .topo-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 11px; color: var(--muted-foreground); }
 .topo-filters { display: flex; flex-wrap: wrap; gap: 12px; }
 .topo-filters fieldset { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -49,6 +52,7 @@
 .topo-acc-mark { margin-left: auto; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
 .topo-acc-item[open] > .topo-acc-head { background: var(--muted); }
 .topo-acc-body { padding: 4px 14px 14px; }
+.topo-checklist-scroll { max-height: 320px; overflow-y: auto; }
 .topo-src { border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--muted); overflow: hidden; }
 .topo-line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 1px 8px; font-size: 11px; }
 .topo-line.is-hit { background: var(--accent); }
