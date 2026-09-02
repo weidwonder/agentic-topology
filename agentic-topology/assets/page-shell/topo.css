@@ -73,9 +73,9 @@
 .topo-crumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
 .topo-crumb-now { color: var(--foreground); font-weight: 600; }
 .topo-chain { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 0; }
-.topo-chain-cell { flex: 0 0 auto; width: 184px; padding: 8px 10px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--card); }
-.topo-chain-cell.is-agent { background: color-mix(in oklab, var(--primary) 10%, var(--card)); border-radius: 14px; }
-.topo-chain-cell.is-focus { box-shadow: 0 0 0 2px var(--ring); }
+/* 弹层里这一格只是「你点开的是谁」，不用画框：框在弹层内边距处会被裁掉半条边，反而更难看。 */
+.topo-chain-cell { flex: 0 0 auto; padding: 0 0 4px; }
+.topo-chain-cell .topo-node-name { font-size: 15px; }
 .topo-chain-link { flex: 0 0 auto; align-self: center; width: 132px; padding: 0 8px; text-align: center; }
 .topo-chain-arrow { display: block; width: 100%; height: 0; margin: 4px 0; border-top: 1.6px solid var(--primary); }
 .topo-chain-cap { font-size: 10.5px; color: var(--muted-foreground); }

@@ -139,6 +139,7 @@ function nodeHtml(node, box, checklist = []) {
 function overview(data, pageLayout, staleness) {
   const frames = [...pageLayout.groups.entries()].map(([groupId, group]) =>
     `<div class="topo-frame" data-group-id="${value(groupId)}" data-x="${group.x}" data-y="${group.y}"` +
+    ` data-w="${group.w}" data-h="${group.h}"` +
     ` style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">` +
     `<span class="topo-frame-label">${value(group.name)}</span></div>`).join('');
   const edges = pageLayout.edges.map((edge) => {
@@ -203,7 +204,8 @@ function overview(data, pageLayout, staleness) {
     `<button class="btn btn-outline btn-sm" data-save-layout>${esc(WORDS.labels.saveLayout)}</button>` +
     `<button class="btn btn-ghost btn-sm" data-reset-layout>${esc(WORDS.labels.resetLayout)}</button>` +
     `<span class="topo-canvas-hint" data-canvas-hint>${esc(WORDS.labels.dragHint)}</span></div>`;
-  const diagram = `<div class="topo-wrap">${pill}${canvasBar}` +
+  // 发起说明与收尾说明 MUST 都待在画布外面：它们是这张图的前言和后记，不是图上的元素。
+  const diagram = `${pill}<div class="topo-wrap">${canvasBar}` +
     `<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
