@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FX, renderOk, renderFail, sect, dataOf, validateCli } from './helpers.mjs';
 
-const D = (fx, out) => sect(renderOk(FX(fx), out), 'view-node-detail');
+const D = (fx, out) => sect(renderOk(FX(fx), out), 'detail-store');
 
 test('详情用原生 <details> 分段，Agent 有六段', () => {
   const d = D('base.topology.yaml', 'nd.html');
@@ -32,7 +32,7 @@ test('工具/MCP/Skill 三份清单分列在三个独立容器', () => {
 
 test('「没设」中性呈现且不进核对清单', () => {
   const html = renderOk(FX('base.topology.yaml'), 'nd.html');
-  const d = sect(html, 'view-node-detail');
+  const d = sect(html, 'detail-store');
   const m = d.match(/花钱[\s\S]{0,200}/)[0];
   assert.match(m, /没设/);
   assert.doesNotMatch(m, /alert-destructive|badge-destructive|is-unknown|警示/);
@@ -48,7 +48,7 @@ test('可信度徽章在分段标题栏，不混进属性列表', () => {
 test('子代理是一等节点：图上有它、父详情有子卡且可跳转、有独立反向边', () => {
   const html = renderOk(FX('subagent.topology.yaml'), 'sa.html');
   assert.match(sect(html, 'view-overview'), /data-node-id="SUB1"/, '子代理必须作为一等节点上图');
-  const d = sect(html, 'view-node-detail');
+  const d = sect(html, 'detail-store');
   assert.match(d, /topo-sub/);
   assert.match(d, /data-goto="SUB1"/, '子卡要能跳到该节点');
   assert.match(d, /data-detail-for="SUB1"/, '子代理自己要有完整详情');
@@ -64,12 +64,15 @@ test('父子回传边缺「收下之前先查什么」→ 拒绝出图（AC-011 
   assert.ok(hit, `期望 screening 的条件必填错误，实际：${JSON.stringify(out.errors)}`);
 });
 
-test('每个视图都有返回入口与面包屑', () => {
+test('每一层都关得掉：折叠视图有返回入口，详情弹层有关闭按钮', () => {
   const html = renderOk(FX('subagent.topology.yaml'), 'sa.html');
-  for (const id of ['view-node-detail', 'view-folded']) {
-    const v = sect(html, id);
-    assert.match(v, /data-back/, `${id} 没有返回入口`);
-    assert.match(v, /topo-crumb/, `${id} 没有面包屑`);
-  }
+  const foldedView = sect(html, 'view-folded');
+  assert.match(foldedView, /data-back/, '折叠视图没有返回入口');
+  assert.match(foldedView, /topo-crumb/, '折叠视图没有面包屑');
+  const modal = sect(html, 'topo-modal');
+  assert.match(modal, /data-modal-close/, '详情弹层没有关闭入口');
+  assert.match(modal, /topo-modal-backdrop[^>]*data-modal-close/, '点弹层外关不掉');
+  const script = html.slice(html.lastIndexOf('<script>'));
+  assert.match(script, /key === 'Escape'/, 'Esc 关不掉弹层');
   assert.match(sect(html, 'view-overview'), /topo-crumb/);
 });

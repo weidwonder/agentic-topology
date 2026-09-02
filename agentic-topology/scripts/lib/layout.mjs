@@ -5,8 +5,10 @@ import { foldSummary } from './interactions.mjs';
 const M = {
   NODE_W: 184,
   NODE_MIN_H: 76,
-  ROW_GAP: 52,
-  COL_GAP: 118,
+  // 行列间距要留得开：连线是直接从方块边上拉出去的，间距一紧，跨堆的长线只能贴着别的方块过，
+  // 看起来就是「线从卡片里穿出来」。留宽之后线有自己的走廊，人也有地方手动拖。
+  ROW_GAP: 72,
+  COL_GAP: 200,
   GROUP_PAD_X: 24,
   GROUP_PAD_TOP: 26,
   STAGE_PAD: 32,

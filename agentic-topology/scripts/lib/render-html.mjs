@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { layoutFolded } from './layout.mjs';
 import { applyFilter, foldSummary } from './interactions.mjs';
+import { renderMarkdown } from './markdown.mjs';
 
 const ASSET_DIR = fileURLToPath(new URL('../../assets/page-shell/', import.meta.url));
 const SHELL = readFileSync(`${ASSET_DIR}/shell.html`, 'utf8');
@@ -37,6 +38,8 @@ const WORDS = {
     skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设',
     checklist: '这几处得你自己去核实',
     start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
+    close: '关闭', saveLayout: '把位置存回这个文件', resetLayout: '恢复自动摆放',
+    dragHint: '方块和分组都能拖；拖完点「把位置存回这个文件」，下次打开还是这个样子',
     concurrent: '同时干', items: '件', fan: '会派别人', noFan: '不会派别人', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
     foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
@@ -88,16 +91,20 @@ function nodeHtml(node, box) {
   const labels = WORDS.kind;
   const top = `<div class="topo-node-top"><span class="topo-node-kind">${value(labels[node.kind])}</span>` +
     `<span class="topo-node-id">${value(node.id)}</span>${flag(confidence)}</div>`;
+  // data-x / data-y 留着「恢复自动摆放」时用：拖过之后要能退回程序算出来的原位。
   const head = `<div class="${classes.filter(Boolean).join(' ')}" data-node-id="${value(node.id)}"` +
-    ` data-goto="${value(node.id)}" style="left:${box.x}px;top:${box.y}px;width:${box.w}px;height:${box.h}px">`;
+    ` data-goto="${value(node.id)}" data-group="${value(node.group, '')}"` +
+    ` data-x="${box.x}" data-y="${box.y}"` +
+    ` style="left:${box.x}px;top:${box.y}px;width:${box.w}px;height:${box.h}px">`;
   return `${head}${top}<div class="topo-node-name">${value(node.name)}</div>` +
     `<div class="topo-node-desc">${value(node.responsibility)}</div>` +
     (marks.length ? `<div class="topo-marks">${marks.join('')}</div>` : '') + '</div>';
 }
 
 function overview(data, pageLayout, staleness) {
-  const frames = [...pageLayout.groups.values()].map((group) =>
-    `<div class="topo-frame" style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">` +
+  const frames = [...pageLayout.groups.entries()].map(([groupId, group]) =>
+    `<div class="topo-frame" data-group-id="${value(groupId)}" data-x="${group.x}" data-y="${group.y}"` +
+    ` style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">` +
     `<span class="topo-frame-label">${value(group.name)}</span></div>`).join('');
   const edges = pageLayout.edges.map((edge) => {
     const cls = edge.category === 'pass_or_skip' ? 'is-ok' :
@@ -145,10 +152,16 @@ function overview(data, pageLayout, staleness) {
     `${esc(WORDS.category.reject_or_halt)}</span></div>`;
   // 发起标记以前是 .topo-stage 内部绝对定位在 (0,0) 的一枚小胶囊，隐含假设 entry 只有一行。
   // entry 一旦是几百字的长段落（真实项目常见），它会盖住第一行的分组框与节点——这不是布局算法的锅，
-  // 它压根没被算进 layout.mjs 的坐标系。改成图前面的正常文档流色块，让浏览器按实际内容自己撑高度，
-  // 不用再猜一个像素数字。
-  const pill = `<div class="topo-pill">${esc(WORDS.labels.start)}：${value(data.graph?.entry)}</div>`;
-  const diagram = `<div class="topo-wrap">${pill}<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
+  // 它压根没被算进 layout.mjs 的坐标系。改成图前面的正常文档流整条色块，让浏览器按实际内容自己撑高度，
+  // 不用再猜一个像素数字；正文走 Markdown，因为 entry 常写成带小标题与列表的一段说明。
+  const pill = `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.start)}</div>` +
+    `<div class="topo-md">${renderMarkdown(data.graph?.entry)}</div></div>`;
+  const canvasBar = `<div class="topo-canvas-bar" data-canvas-bar data-dirty="0">` +
+    `<button class="btn btn-outline btn-sm" data-save-layout>${esc(WORDS.labels.saveLayout)}</button>` +
+    `<button class="btn btn-ghost btn-sm" data-reset-layout>${esc(WORDS.labels.resetLayout)}</button>` +
+    `<span class="topo-canvas-hint" data-canvas-hint>${esc(WORDS.labels.dragHint)}</span></div>`;
+  const diagram = `<div class="topo-wrap">${pill}${canvasBar}` +
+    `<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
     ` aria-hidden="true">${markers}${edges}</svg>${frames}${nodes}</div></div>`;
@@ -352,7 +365,7 @@ function folded(data, warnings) {
   const stage = `<div class="topo-wrap"><div class="topo-stage" style="width:${foldedLayout.stage.w}px;` +
     `height:${foldedLayout.stage.h}px"><svg class="topo-edges" viewBox="0 0 ${foldedLayout.stage.w} ` +
     `${foldedLayout.stage.h}" aria-hidden="true">${lines}</svg>${cards}</div></div>`;
-  return `<section id="view-folded" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
+  return `<section id="view-folded" class="view" hidden><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
     ` data-back>${esc(WORDS.labels.back)}</button>` +
     `<span class="topo-crumb">${esc(WORDS.labels.overview)} · ` +
     `<span class="topo-crumb-now">${esc(WORDS.labels.folded)}</span></span><span class="grow"></span>` +
@@ -372,12 +385,19 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
   const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
   const details = (data.nodes || []).map((node) => detail(data, node, enriched)).join('');
   const edgeDetails = (data.edges || []).map((edge) => edgeDetail(edge)).join('');
+  // 详情不再平铺成一条长页面靠滚动定位：全部收进隐藏仓库，点方块或连线时复制进弹层。
+  // 折叠视图同理，默认藏起来，由「收起来看」切换——一屏只呈现一件事。
+  const modal = `<div class="topo-modal" id="topo-modal" hidden>` +
+    `<div class="topo-modal-backdrop" data-modal-close></div>` +
+    `<div class="topo-modal-panel" role="dialog" aria-modal="true" aria-labelledby="topo-modal-title">` +
+    `<div class="topo-modal-bar"><span class="topo-crumb" id="topo-modal-title">` +
+    `${esc(WORDS.labels.detail)}</span>` +
+    `<button class="btn btn-ghost btn-sm topo-modal-close" data-modal-close>` +
+    `${esc(WORDS.labels.close)}</button></div>` +
+    `<div class="topo-modal-body" id="topo-modal-body"></div></div></div>`;
   const body = `<div class="topo-views">${overview(payload, pageLayout, enriched.staleness)}` +
-    `<section id="view-node-detail" class="view"><div class="app-bar"><button class="btn btn-ghost btn-sm"` +
-    ` data-back>${esc(WORDS.labels.back)}</button><span class="topo-crumb">` +
-    `${esc(WORDS.labels.overview)} · <span class="topo-crumb-now">${esc(WORDS.labels.detail)}</span></span></div>` +
-    `<div class="screen">${details}${edgeDetails}</div></section>` +
-    `${folded(data, warnings)}</div>`;
+    `${folded(data, warnings)}` +
+    `<div id="detail-store" hidden>${details}${edgeDetails}</div>${modal}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)
     .replace('<!--SLOT:DATA-->', json).replace('<!--SLOT:BODY-->', body).replace('<!--SLOT:SCRIPT-->', APP);
 }
