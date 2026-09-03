@@ -74,7 +74,7 @@ nodes:
     system_prompt:
       file: "prompts/planner.v2.md"
       from: 1
-      to: 0
+      to: 6
     tools:
       - read
       - write
@@ -150,7 +150,7 @@ information:
         - "src/material-inventory.ts:102-137"
       confirmed_at: "2026-08-26"
   - id: planning-brief
-    name: "规划输入"
+    name: "定稿的计划"
     what: "交给规划师开工的那份交代"
     blocks:
       - "按类型分好组的材料视图"
@@ -203,7 +203,10 @@ edges:
     category: normal
     trigger: "每轮必经"
     payloads:
-      - info: material-list
+      - info: nope
+        carrier: bundle
+        delivered_at: "同一次调用里直接交出"
+      - info: fingerprints
         carrier: bundle
         delivered_at: "同一次调用里直接交出"
       - info: fingerprints

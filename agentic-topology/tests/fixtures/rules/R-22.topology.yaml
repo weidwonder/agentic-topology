@@ -74,7 +74,7 @@ nodes:
     system_prompt:
       file: "prompts/planner.v2.md"
       from: 1
-      to: 0
+      to: 6
     tools:
       - read
       - write
@@ -203,7 +203,7 @@ edges:
     category: normal
     trigger: "每轮必经"
     payloads:
-      - info: material-list
+      - info: nope
         carrier: bundle
         delivered_at: "同一次调用里直接交出"
       - info: fingerprints

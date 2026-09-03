@@ -282,18 +282,293 @@ nodes:
         - "src/main/internal-control/reconcile.ts:66-153"
       confirmed_at: "2026-08-27"
 
+information:
+  - id: info-01
+    name: "材料清单"
+    what: "材料清单"
+    blocks:
+      - "材料清单"
+    form: bundle
+    produced_at: "collectMaterialInventory 返回时"
+    origin: inventory
+    destination: reuse
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-02
+    name: "材料集合指纹"
+    what: "材料集合指纹与审计重点指纹"
+    blocks:
+      - "材料集合指纹"
+      - "审计重点指纹"
+    form: bundle
+    produced_at: "runInternalControlAudit 计算 reuseKey 时"
+    origin: inventory
+    destination: reuse
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-03
+    name: "材料清单、审计重点"
+    what: "材料清单、审计重点、方面词表和检索策略"
+    blocks:
+      - "材料清单"
+      - "审计重点"
+      - "方面词表"
+      - "检索策略"
+    form: bundle
+    produced_at: "复用未命中后的 planLedger 调用参数"
+    origin: reuse
+    destination: planning_prep
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-04
+    name: "复用的台账及本轮材料清单"
+    what: "复用的台账及本轮材料清单"
+    blocks:
+      - "复用的台账及本轮材料清单"
+    form: bundle
+    produced_at: "findReusableLedger 命中时"
+    origin: reuse
+    destination: dispatch
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-05
+    name: "已沿用上次审计任务台账的进度信息"
+    what: "已沿用上次审计任务台账的进度信息"
+    blocks:
+      - "已沿用上次审计任务台账的进度信息"
+    form: bundle
+    produced_at: "复用命中分支 emit 时"
+    origin: reuse
+    destination: dispatch
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-06
+    name: "plan-input.json 路径、规划消息和台账草稿输出路径"
+    what: "plan-input.json 路径、规划消息和台账草稿输出路径"
+    blocks:
+      - "plan-input.json 路径"
+      - "规划消息"
+      - "台账草稿输出路径"
+    form: prompt
+    produced_at: "buildPlannerPrompt 返回时"
+    origin: planning_prep
+    destination: planner
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-07
+    name: "ledger.draft.json"
+    what: "ledger.draft.json"
+    blocks:
+      - "ledger.draft.json"
+    form: file
+    produced_at: "规划 Agent 使用 write 写文件时"
+    origin: planner
+    destination: ledger_validate
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-08
+    name: "规划 Agent 最终回复文本"
+    what: "规划 Agent 最终回复文本"
+    blocks:
+      - "规划 Agent 最终回复文本"
+    form: file
+    produced_at: "runIsolatedTask 返回时"
+    origin: planner
+    destination: ledger_validate
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-09
+    name: "结构化 rejectionErrors"
+    what: "结构化 rejectionErrors"
+    blocks:
+      - "结构化 rejectionErrors"
+    form: bundle
+    produced_at: "normalizePlannedLedger 返回非法结果时"
+    origin: ledger_validate
+    destination: planner
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-10
+    name: "AuditLedger"
+    what: "AuditLedger"
+    blocks:
+      - "AuditLedger"
+    form: bundle
+    produced_at: "normalizePlannedLedger 成功并组装 ledger 时"
+    origin: ledger_validate
+    destination: dispatch
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-11
+    name: "工作项、任务项"
+    what: "工作项、任务项与材料范围"
+    blocks:
+      - "工作项"
+      - "任务项"
+      - "材料范围"
+    form: bundle
+    produced_at: "planInternalControlWorkItems 切分时"
+    origin: dispatch
+    destination: judge
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-12
+    name: "取消工作项信号"
+    what: "取消工作项信号"
+    blocks:
+      - "取消工作项信号"
+    form: bundle
+    produced_at: "看门狗超时、配置错误或外层取消发生时"
+    origin: dispatch
+    destination: judge
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-13
+    name: "同会话补交回执提示"
+    what: "同会话补交回执提示"
+    blocks:
+      - "同会话补交回执提示"
+    form: bundle
+    produced_at: "判定会话结束但未提交回执时"
+    origin: dispatch
+    destination: judge
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-14
+    name: "submit_receipt 的 receipts 回执"
+    what: "submit_receipt 的 receipts 回执"
+    blocks:
+      - "submit_receipt 的 receipts 回执"
+    form: event
+    produced_at: "判定 Agent 形成每个任务项结论后"
+    origin: judge
+    destination: receipt_validate
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-15
+    name: "逐条 validationErrors"
+    what: "逐条 validationErrors"
+    blocks:
+      - "逐条 validationErrors"
+    form: bundle
+    produced_at: "validateItemReceipts 返回错误时"
+    origin: receipt_validate
+    destination: judge
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-16
+    name: "结构合法的 ItemReceipt[]"
+    what: "结构合法的 ItemReceipt[]"
+    blocks:
+      - "结构合法的 ItemReceipt[]"
+    form: bundle
+    produced_at: "validateItemReceipts 返回 parsed.receipts 时"
+    origin: receipt_validate
+    destination: evidence_gates
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-17
+    name: "检索或引文闸门错误"
+    what: "检索或引文闸门错误"
+    blocks:
+      - "检索或引文闸门错误"
+    form: bundle
+    produced_at: "auditSearchSweep 或 auditReceiptQuotes 返回错误时"
+    origin: evidence_gates
+    destination: judge
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-18
+    name: "最终接收的回执"
+    what: "最终接收的回执"
+    blocks:
+      - "最终接收的回执"
+    form: bundle
+    produced_at: "accepted = parsed.receipts 时"
+    origin: evidence_gates
+    destination: reconcile
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+  - id: info-19
+    name: "各工作项 outcomes 及 errors"
+    what: "各工作项 outcomes 及 errors"
+    blocks:
+      - "各工作项 outcomes 及 errors"
+    form: bundle
+    produced_at: "滑动窗口 onSettled 收集结果时"
+    origin: dispatch
+    destination: reconcile
+    confidence: certain
+    source:
+      refs:
+        - "src/main/internal-control/workflow.ts:423-447"
+      confirmed_at: "2026-08-27"
+
 edges:
   - from: inventory
     to: reuse
     category: normal
     trigger: "材料清单与指纹计算完成"
-    carrier: bundle
     payloads:
-      - content: "材料清单"
-        produced_at: "collectMaterialInventory 返回时"
+      - info: info-01
+        carrier: bundle
         delivered_at: "构造 reuseKey 前"
-      - content: "材料集合指纹与审计重点指纹"
-        produced_at: "runInternalControlAudit 计算 reuseKey 时"
+      - info: info-02
+        carrier: bundle
         delivered_at: "调用 findReusableLedger 时"
     concurrency_control: "不会发生（单轮顺序执行）"
     confidence: certain
@@ -306,10 +581,9 @@ edges:
     to: planning_prep
     category: normal
     trigger: "没有找到可复用台账"
-    carrier: bundle
     payloads:
-      - content: "材料清单、审计重点、方面词表和检索策略"
-        produced_at: "复用未命中后的 planLedger 调用参数"
+      - info: info-03
+        carrier: bundle
         delivered_at: "构建规划提示词的首轮"
     concurrency_control: "不会发生"
     confidence: certain
@@ -323,13 +597,12 @@ edges:
     to: dispatch
     category: pass_or_skip
     trigger: "找到满足四项复用条件的台账"
-    carrier: bundle
     payloads:
-      - content: "复用的台账及本轮材料清单"
-        produced_at: "findReusableLedger 命中时"
+      - info: info-04
+        carrier: bundle
         delivered_at: "设置 ledger 并进入工作项切分时"
-      - content: "已沿用上次审计任务台账的进度信息"
-        produced_at: "复用命中分支 emit 时"
+      - info: info-05
+        carrier: bundle
         delivered_at: "规划阶段完成通知时"
     concurrency_control: "不会发生"
     confidence: certain
@@ -342,10 +615,9 @@ edges:
     to: planner
     category: normal
     trigger: "每次规划 attempt 构建完提示词和输入文件"
-    carrier: prompt
     payloads:
-      - content: "plan-input.json 路径、规划消息和台账草稿输出路径"
-        produced_at: "buildPlannerPrompt 返回时"
+      - info: info-06
+        carrier: prompt
         delivered_at: "runIsolatedTask 首轮消息和工作目录中"
     concurrency_control: "排队（规划 attempt 串行）"
     confidence: certain
@@ -359,13 +631,12 @@ edges:
     to: ledger_validate
     category: normal
     trigger: "规划会话结束并返回最终文本"
-    carrier: file
     payloads:
-      - content: "ledger.draft.json"
-        produced_at: "规划 Agent 使用 write 写文件时"
+      - info: info-07
+        carrier: file
         delivered_at: "规划会话结束后 readLedgerDraft 读取时"
-      - content: "规划 Agent 最终回复文本"
-        produced_at: "runIsolatedTask 返回时"
+      - info: info-08
+        carrier: file
         delivered_at: "记录 ic_ledger_planned 日志时"
     concurrency_control: "不会发生"
     confidence: certain
@@ -378,10 +649,9 @@ edges:
     to: planner
     category: reject_or_halt
     trigger: "台账解析或规范化校验失败且仍有规划 attempt"
-    carrier: bundle
     payloads:
-      - content: "结构化 rejectionErrors"
-        produced_at: "normalizePlannedLedger 返回非法结果时"
+      - info: info-09
+        carrier: bundle
         delivered_at: "下一次 buildPlannerPrompt 的 previousRejectionErrors 中"
     concurrency_control: "排队（每次 attempt 依次重开规划会话）"
     confidence: certain
@@ -394,10 +664,9 @@ edges:
     to: dispatch
     category: pass_or_skip
     trigger: "台账规范化成功"
-    carrier: bundle
     payloads:
-      - content: "AuditLedger"
-        produced_at: "normalizePlannedLedger 成功并组装 ledger 时"
+      - info: info-10
+        carrier: bundle
         delivered_at: "planLedger 返回并保存 ledger 后"
     concurrency_control: "不会发生"
     confidence: certain
@@ -411,16 +680,15 @@ edges:
     to: judge
     category: normal
     trigger: "工作项进入滑动窗口，或卡死/取消/配置错误信号作用于判定会话"
-    carrier: bundle
     payloads:
-      - content: "工作项、任务项与材料范围"
-        produced_at: "planInternalControlWorkItems 切分时"
+      - info: info-11
+        carrier: bundle
         delivered_at: "runJudgeWorkItem 构造 work-item.json 并启动会话时"
-      - content: "取消工作项信号"
-        produced_at: "看门狗超时、配置错误或外层取消发生时"
+      - info: info-12
+        carrier: bundle
         delivered_at: "cancelIsolatedTask 调用时"
-      - content: "同会话补交回执提示"
-        produced_at: "判定会话结束但未提交回执时"
+      - info: info-13
+        carrier: bundle
         delivered_at: "复用 execution.conversationId 的 nudge 调用时"
     concurrency_control: "滑动窗口并发，默认 3、上限 4；同一工作项的 attempt 串行"
     confidence: certain
@@ -434,10 +702,9 @@ edges:
     to: receipt_validate
     category: normal
     trigger: "判定 Agent 调用 submit_receipt"
-    carrier: event
     payloads:
-      - content: "submit_receipt 的 receipts 回执"
-        produced_at: "判定 Agent 形成每个任务项结论后"
+      - info: info-14
+        carrier: event
         delivered_at: "registerReceiptTicket handler 收到工具入参时"
     concurrency_control: "同一工作项已接收后重复提交被直接确认，不再重复校验"
     confidence: certain
@@ -450,10 +717,9 @@ edges:
     to: judge
     category: reject_or_halt
     trigger: "回执契约、范围或国家规范依据校验失败"
-    carrier: bundle
     payloads:
-      - content: "逐条 validationErrors"
-        produced_at: "validateItemReceipts 返回错误时"
+      - info: info-15
+        carrier: bundle
         delivered_at: "registerReceiptTicket 返回错误并作为下一轮 validationErrors 时"
     concurrency_control: "同一会话内可反复提交；达到 4 次退回后取消本次 attempt，外层最多 3 次 attempt"
     confidence: certain
@@ -467,10 +733,9 @@ edges:
     to: evidence_gates
     category: normal
     trigger: "回执结构和任务范围校验通过"
-    carrier: bundle
     payloads:
-      - content: "结构合法的 ItemReceipt[]"
-        produced_at: "validateItemReceipts 返回 parsed.receipts 时"
+      - info: info-16
+        carrier: bundle
         delivered_at: "同一 submit_receipt handler 继续执行检索与引文闸门时"
     concurrency_control: "不会发生（单次提交顺序执行各闸门）"
     confidence: certain
@@ -483,10 +748,9 @@ edges:
     to: judge
     category: reject_or_halt
     trigger: "制度检索不足、检索入参截断、引文缺失/歧义或位置不可核验且非末轮"
-    carrier: bundle
     payloads:
-      - content: "检索或引文闸门错误"
-        produced_at: "auditSearchSweep 或 auditReceiptQuotes 返回错误时"
+      - info: info-17
+        carrier: bundle
         delivered_at: "rejectSubmission 返回并回注下一次提交或下一 attempt 提示时"
     concurrency_control: "同一会话重提；末轮或工具不可用时改为标记未核验并放行"
     confidence: certain
@@ -499,10 +763,9 @@ edges:
     to: reconcile
     category: pass_or_skip
     trigger: "检索与引文闸门通过，或末轮/工具不可用按未核验放行"
-    carrier: bundle
     payloads:
-      - content: "最终接收的回执"
-        produced_at: "accepted = parsed.receipts 时"
+      - info: info-18
+        carrier: bundle
         delivered_at: "全部工作项结束后 outcomes.flatMap 汇总时"
     concurrency_control: "排队（工作项完成后统一汇总）"
     confidence: certain
@@ -516,10 +779,9 @@ edges:
     to: reconcile
     category: reject_or_halt
     trigger: "工作项失败、缺少回执或配置错误终止后进入汇总阶段"
-    carrier: bundle
     payloads:
-      - content: "各工作项 outcomes 及 errors"
-        produced_at: "滑动窗口 onSettled 收集结果时"
+      - info: info-19
+        carrier: bundle
         delivered_at: "汇总阶段构造 receipts 并拼接 failureDetails 时"
     concurrency_control: "不会发生（所有可运行工作项结束后统一对账）"
     confidence: certain

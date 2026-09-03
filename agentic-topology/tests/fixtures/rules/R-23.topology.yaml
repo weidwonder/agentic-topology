@@ -74,7 +74,7 @@ nodes:
     system_prompt:
       file: "prompts/planner.v2.md"
       from: 1
-      to: 0
+      to: 6
     tools:
       - read
       - write
@@ -195,6 +195,20 @@ information:
     source:
       refs:
         - "src/ledger.ts:72-122"
+      confirmed_at: "2026-08-26"
+  - id: lonely
+    name: "没人传的东西"
+    what: "清单里挂着，可图上一条线都不传它"
+    blocks:
+      - "一段没人要的内容"
+    form: file
+    produced_at: "不知道什么时候"
+    origin: N1
+    destination: N4
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:1"
       confirmed_at: "2026-08-26"
 
 edges:

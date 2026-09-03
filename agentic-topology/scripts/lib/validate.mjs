@@ -4,17 +4,65 @@ const ENUMS = {
   exit_kind: new Set(['normal', 'abnormal', 'cancelled']),
   node_kind: new Set(['agent', 'program', 'decision']),
   confidence: new Set(['certain', 'inferred', 'unread', 'design']),
+  // 「它本身是什么形态」六档，比「靠什么交过去」多一档 interface：
+  // 一个对外接口本身是一份信息，但没人能把接口当成载体交出去。两个闭集 MUST 分开。
+  info_form: new Set(['file', 'bundle', 'prompt', 'interface', 'event', 'other']),
+  carrier: new Set(['file', 'bundle', 'prompt', 'event', 'other']),
 };
 
 const TOP_KEYS = new Set([
   'schema_version', 'source_project', 'generated_at', 'analysis_complete', 'graph', 'nodes', 'edges', 'groups',
+  'information',
 ]);
+// 命名 MUST 以 KEYS 结尾：review-gate.test.mjs 的闭集↔文档漂移守卫按这个后缀扫闭集，
+// 换成小驼峰就会被静默漏掉，文档少写一个键也没人发现。
+const INFORMATION_KEYS = new Set([
+  'id', 'name', 'what', 'blocks', 'form', 'form_note', 'produced_at', 'origin', 'destination',
+  'same_as', 'source', 'confidence',
+]);
+const PAYLOAD_REF_KEYS = new Set(['info', 'carrier', 'carrier_note', 'delivered_at']);
 const GRAPH_KEYS = new Set(['topology', 'context_sharing', 'entry', 'exits']);
 const STOP_KEYS = new Set(['conditions', 'limits']);
 const GROUP_KEYS = new Set(['id', 'name', 'order']);
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 const EXIT_KEYS = new Set(['name', 'kind', 'condition', 'source']);
 const SOURCE_KEYS = new Set(['refs', 'confirmed_at', 'doc_only', 'conflict_note']);
+
+/**
+ * 信息块自身的校验。跨对象的四类问题（悬空引用、孤儿、重复引用、same_as 悬空）
+ * 要等 edges 走完才判得了，放在 informationCrossCheck。
+ */
+function informationCheck(item, index, nodeIds, issue) {
+  const path = `information[${index}]`;
+  if (!isObject(item)) {
+    issue('E_TYPE', path, '信息必须是对象');
+    return;
+  }
+  unknown(item, INFORMATION_KEYS, path, issue);
+  for (const key of ['id', 'name', 'what', 'form', 'produced_at', 'origin', 'destination']) {
+    if (!isString(item[key])) issue('E_REQUIRED', `${path}.${key}`, `${key} 必填`);
+  }
+  if (isString(item.id) && !ID_PATTERN.test(item.id)) issue('E_TYPE', `${path}.id`, 'id 格式不合法');
+  if (!Array.isArray(item.blocks) || item.blocks.length === 0) {
+    issue('E_REQUIRED', `${path}.blocks`, 'blocks 必须非空——读不出来就写一条「缺失（没查出来）」');
+  } else {
+    item.blocks.forEach((block, i) => {
+      if (!isString(block)) issue('E_TYPE', `${path}.blocks[${i}]`, '每一块必须是一行文字');
+    });
+  }
+  if (!ENUMS.info_form.has(item.form)) issue('E_ENUM', `${path}.form`, 'form 错误');
+  if (item.form === 'other' && !isString(item.form_note)) {
+    issue('E_CONDITIONAL_REQUIRED', `${path}.form_note`, 'form_note 必填');
+  }
+  for (const key of ['origin', 'destination']) {
+    if (isString(item[key]) && !nodeIds.has(item[key])) {
+      issue('E_DANGLING_EDGE', `${path}.${key}`, `${key} 指向不存在的方块`);
+    }
+  }
+  if (!ENUMS.confidence.has(item.confidence)) issue('E_ENUM', `${path}.confidence`, 'confidence 错误');
+  sourceCheck(item.source, `${path}.source`, issue);
+  docOnlyCheck(item, path, issue);
+}
 
 function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function isString(value) { return typeof value === 'string' && value.length > 0; }
@@ -151,8 +199,13 @@ export function validate(data, lines = new Map()) {
   }
   for (const key of [
     'schema_version', 'source_project', 'generated_at', 'analysis_complete', 'graph', 'nodes', 'edges',
+    'information',
   ]) {
-    if (!(key in data)) issue('E_REQUIRED', key, `缺少必填项 ${key}`);
+    if (!(key in data)) {
+      issue('E_REQUIRED', key, key === 'information'
+        ? '缺少必填项 information——请先补上信息清单，并让每条线写清它传的是哪几份'
+        : `缺少必填项 ${key}`);
+    }
   }
   for (const key of Object.keys(data)) {
     if (!TOP_KEYS.has(key)) issue('E_UNKNOWN_FIELD', key, `不支持的字段 ${key}`);
@@ -221,13 +274,50 @@ export function validate(data, lines = new Map()) {
       subagentReturns.add(`${subagent.node}\u0000${node.id}`);
     });
   });
+  const information = Array.isArray(data.information) ? data.information
+    : ('information' in data && data.information !== undefined ? null : []);
+  if (information === null) {
+    issue('E_TYPE', 'information', 'information 必须是数组');
+  }
+  const infoList = information || [];
+  const infoIds = new Set();
+  const infoNames = new Map();
+  infoList.forEach((item, index) => {
+    const path = `information[${index}]`;
+    if (isObject(item) && isString(item.id)) {
+      if (infoIds.has(item.id)) issue('E_DUP_ID', `${path}.id`, '信息 id 重复');
+      infoIds.add(item.id);
+    }
+    if (isObject(item) && isString(item.name)) {
+      // 原样比较，MUST NOT 折叠大小写或空白：描述是人手写的，
+      // 静默归一化会把「我明明写了两份」变成「只有一份」。
+      if (infoNames.has(item.name)) {
+        issue('E_DUP_INFO_NAME', `${path}.name`,
+          `信息名「${item.name}」与 information[${infoNames.get(item.name)}] 撞了；图上要靠名字认人，MUST 各起各的名`);
+      } else {
+        infoNames.set(item.name, index);
+      }
+    }
+    informationCheck(item, index, nodeIds, issue);
+  });
+  infoList.forEach((item, index) => {
+    if (!isObject(item) || !('same_as' in item)) return;
+    const path = `information[${index}].same_as`;
+    if (!isString(item.same_as)) {
+      issue('E_TYPE', path, 'same_as 必须是另一份信息的编号');
+    } else if (item.same_as === item.id) {
+      issue('E_SELF_SAME_AS', path, '一份信息不能怀疑自己跟自己是同一份');
+    } else if (!infoIds.has(item.same_as)) {
+      issue('E_DANGLING_INFO', path, `「可能与哪份是同一份」指向不存在的信息「${item.same_as}」`);
+    }
+  });
+  const referenced = new Set();
   const edges = Array.isArray(data.edges) ? data.edges : [];
   const edgeKeys = new Set([
-    'from', 'to', 'category', 'trigger', 'carrier', 'carrier_note', 'payloads',
+    'from', 'to', 'category', 'trigger', 'payloads',
     'concurrency_control', 'screening', 'confidence', 'source', 'field_confidence',
     'bidirectional', 'reverse', 'both_ways',
   ]);
-  const payloadKeys = new Set(['content', 'produced_at', 'delivered_at']);
   const seenPairs = new Map();
   edges.forEach((edge, index) => {
     const edgePath = `edges[${index}]`;
@@ -237,19 +327,13 @@ export function validate(data, lines = new Map()) {
     }
     unknown(edge, edgeKeys, edgePath, issue);
     const requiredEdgeKeys = [
-      'from', 'to', 'category', 'trigger', 'carrier', 'payloads', 'concurrency_control', 'confidence', 'source',
+      'from', 'to', 'category', 'trigger', 'payloads', 'concurrency_control', 'confidence', 'source',
     ];
     for (const key of requiredEdgeKeys) {
       if (!(key in edge)) issue('E_REQUIRED', `${edgePath}.${key}`, `${key} 必填`);
     }
     if (!['normal', 'pass_or_skip', 'reject_or_halt'].includes(edge.category)) {
       issue('E_ENUM', `${edgePath}.category`, 'category 错误');
-    }
-    if (!['file', 'bundle', 'prompt', 'event', 'other'].includes(edge.carrier)) {
-      issue('E_ENUM', `${edgePath}.carrier`, 'carrier 错误');
-    }
-    if (edge.carrier === 'other' && !isString(edge.carrier_note)) {
-      issue('E_CONDITIONAL_REQUIRED', `${edgePath}.carrier_note`, 'carrier_note 必填');
     }
     if (!ENUMS.confidence.has(edge.confidence)) {
       issue('E_ENUM', `${edgePath}.confidence`, 'confidence 错误');
@@ -259,11 +343,28 @@ export function validate(data, lines = new Map()) {
     if (!Array.isArray(edge.payloads) || edge.payloads.length === 0) {
       issue('E_REQUIRED', `${edgePath}.payloads`, 'payloads 必须非空');
     } else {
+      const seenRefs = new Set();
       edge.payloads.forEach((payload, payloadIndex) => {
         const payloadPath = `${edgePath}.payloads[${payloadIndex}]`;
-        unknown(payload, payloadKeys, payloadPath, issue);
-        for (const key of payloadKeys) {
+        unknown(payload, PAYLOAD_REF_KEYS, payloadPath, issue);
+        for (const key of ['info', 'carrier', 'delivered_at']) {
           if (!isString(payload?.[key])) issue('E_REQUIRED', `${payloadPath}.${key}`, `${key} 必填`);
+        }
+        if (!ENUMS.carrier.has(payload?.carrier)) issue('E_ENUM', `${payloadPath}.carrier`, 'carrier 错误');
+        if (payload?.carrier === 'other' && !isString(payload?.carrier_note)) {
+          issue('E_CONDITIONAL_REQUIRED', `${payloadPath}.carrier_note`, 'carrier_note 必填');
+        }
+        if (isString(payload?.info)) {
+          if (!infoIds.has(payload.info)) {
+            issue('E_DANGLING_INFO', `${payloadPath}.info`,
+              `这条线引用了不存在的信息「${payload.info}」`);
+          } else if (seenRefs.has(payload.info)) {
+            issue('E_DUPLICATE_INFO_REF', payloadPath,
+              `这条线重复引用了同一份信息「${payload.info}」；一条线上一份只写一次`);
+          } else {
+            seenRefs.add(payload.info);
+            referenced.add(payload.info);
+          }
         }
       });
     }
@@ -277,9 +378,9 @@ export function validate(data, lines = new Map()) {
     if (seenPairs.has(pair)) {
       const other = seenPairs.get(pair);
       issue('E_DUPLICATE_EDGE', edgePath,
-        `${edgePath} 与 edges[${other}] 同向重复；应合并为一条，用多个传递物表达差异`);
+        `${edgePath} 与 edges[${other}] 同向重复；应合并为一条，用多份信息表达差异`);
       issue('E_DUPLICATE_EDGE', `edges[${other}]`,
-        `edges[${other}] 与 ${edgePath} 同向重复；应合并为一条，用多个传递物表达差异`);
+        `edges[${other}] 与 ${edgePath} 同向重复；应合并为一条，用多份信息表达差异`);
     } else {
       seenPairs.set(pair, index);
     }
@@ -297,6 +398,13 @@ export function validate(data, lines = new Map()) {
         if (target === undefined) issue('E_UNKNOWN_FIELD', fieldPath, '字段可信度指向不存在的字段');
         else if (!['inferred', 'unread', 'design'].includes(value)) issue('E_ENUM', fieldPath, '字段可信度错误');
       }
+    }
+  });
+  infoList.forEach((item, index) => {
+    if (!isObject(item) || !isString(item.id)) return;
+    if (!referenced.has(item.id)) {
+      issue('E_ORPHAN_INFO', `information[${index}]`,
+        `「${item.name || item.id}」没有任何一条线传它；图上看不见的信息 MUST NOT 留在清单里`);
     }
   });
   nodes.forEach((node, index) => {

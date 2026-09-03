@@ -149,18 +149,118 @@ nodes:
         - "src/citations.ts:10-24"
       confirmed_at: "2026-08-26"
 
+information:
+  - id: info-01
+    name: "材料清册"
+    what: "材料清册"
+    blocks:
+      - "材料清册"
+    form: bundle
+    produced_at: "整理材料清单时"
+    origin: N1
+    destination: N2
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-02
+    name: "用来比对的四个指纹"
+    what: "用来比对的四个指纹"
+    blocks:
+      - "用来比对的四个指纹"
+    form: bundle
+    produced_at: "整理材料清单时"
+    origin: N1
+    destination: N2
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-03
+    name: "材料分组视图"
+    what: "材料分组视图与要求全文"
+    blocks:
+      - "材料分组视图"
+      - "要求全文"
+    form: file
+    produced_at: "复用未命中后现拼"
+    origin: N2
+    destination: N3
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-04
+    name: "沿用的计划"
+    what: "沿用的计划"
+    blocks:
+      - "沿用的计划"
+    form: bundle
+    produced_at: "上一次运行定稿计划时"
+    origin: N2
+    destination: N4
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-05
+    name: "定稿的计划"
+    what: "定稿的计划"
+    blocks:
+      - "定稿的计划"
+    form: file
+    produced_at: "规划会话结束时"
+    origin: N3
+    destination: N4
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-06
+    name: "待定位的材料"
+    what: "待定位的材料"
+    blocks:
+      - "待定位的材料"
+    form: file
+    produced_at: "规划师拆分材料时"
+    origin: N3
+    destination: SUB1
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+  - id: info-07
+    name: "已定位的引文"
+    what: "已定位的引文"
+    blocks:
+      - "已定位的引文"
+    form: file
+    produced_at: "引文定位员完成检索时"
+    origin: SUB1
+    destination: N3
+    confidence: certain
+    source:
+      refs:
+        - "src/workflow.ts:441-447"
+      confirmed_at: "2026-08-26"
+
 edges:
   - from: N1
     to: N2
     category: normal
     trigger: "每轮必经"
-    carrier: bundle
     payloads:
-      - content: "材料清册"
-        produced_at: "整理材料清单时"
+      - info: info-01
+        carrier: bundle
         delivered_at: "同一次调用里直接交出"
-      - content: "用来比对的四个指纹"
-        produced_at: "整理材料清单时"
+      - info: info-02
+        carrier: bundle
         delivered_at: "同一次调用里直接交出"
     concurrency_control: "不会发生（单线顺序执行）"
     confidence: certain
@@ -172,10 +272,9 @@ edges:
     to: N3
     category: normal
     trigger: "复用未命中"
-    carrier: file
     payloads:
-      - content: "材料分组视图与要求全文"
-        produced_at: "复用未命中后现拼"
+      - info: info-03
+        carrier: file
         delivered_at: "开规划会话的首轮消息里"
     concurrency_control: "不会发生"
     confidence: certain
@@ -187,10 +286,9 @@ edges:
     to: N4
     category: pass_or_skip
     trigger: "四个指纹全等，直接沿用上次的计划"
-    carrier: bundle
     payloads:
-      - content: "沿用的计划"
-        produced_at: "上一次运行定稿计划时"
+      - info: info-04
+        carrier: bundle
         delivered_at: "复用命中的那一刻"
     concurrency_control: "不会发生"
     confidence: certain
@@ -202,10 +300,9 @@ edges:
     to: N4
     category: normal
     trigger: "计划通过硬校验"
-    carrier: file
     payloads:
-      - content: "定稿的计划"
-        produced_at: "规划会话结束时"
+      - info: info-05
+        carrier: file
         delivered_at: "校验通过并落盘之后"
     concurrency_control: "排队（校验串行）"
     confidence: certain
@@ -217,10 +314,9 @@ edges:
     to: SUB1
     category: normal
     trigger: "需要定位单份材料的引文"
-    carrier: file
     payloads:
-      - content: "待定位的材料"
-        produced_at: "规划师拆分材料时"
+      - info: info-06
+        carrier: file
         delivered_at: "派发子任务时"
     concurrency_control: "每份材料各自处理"
     confidence: certain
@@ -233,10 +329,9 @@ edges:
     category: normal
     trigger: "引文定位完成"
     screening: "先核对引用是否落在允许的材料里，落不上就退回"
-    carrier: file
     payloads:
-      - content: "已定位的引文"
-        produced_at: "引文定位员完成检索时"
+      - info: info-07
+        carrier: file
         delivered_at: "回传规划师时"
     concurrency_control: "不会发生"
     confidence: certain

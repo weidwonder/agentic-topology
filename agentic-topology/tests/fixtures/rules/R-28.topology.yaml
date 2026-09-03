@@ -74,7 +74,7 @@ nodes:
     system_prompt:
       file: "prompts/planner.v2.md"
       from: 1
-      to: 0
+      to: 6
     tools:
       - read
       - write
@@ -132,7 +132,7 @@ information:
       refs:
         - "src/material-inventory.ts:102-137"
       confirmed_at: "2026-08-26"
-  - id: fingerprints
+  - id: material-list
     name: "四个指纹"
     what: "用来判断材料与要求有没有变过的四个比对值"
     blocks:

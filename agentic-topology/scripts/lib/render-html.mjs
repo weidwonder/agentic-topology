@@ -49,8 +49,11 @@ const WORDS = {
     edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去',
     confirmedTime: '查证时间',
     screening: '收下之前先查什么', concurrencyControl: '同时来了好几份怎么办',
-    payload: '这条线上传的东西', producedAt: '什么时候造出来的',
+    payload: '这条线上传的信息', producedAt: '什么时候造出来的',
     deliveredAt: '什么时候交出去的',
+    infoWhat: '这是什么', infoBlocks: '里面大致有什么', infoForm: '它本身是什么形态',
+    infoOrigin: '从哪来', infoDestination: '到哪去', infoSameAs: '可能与哪份是同一份',
+    infoList: '这张图里流转的信息', infoCount: '份',
     limits: {
       steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
     },
@@ -349,24 +352,43 @@ function detail(data, node, enriched) {
     `<div class="topo-acc">${sections}</div></section>`;
 }
 
-function edgeDetail(edge) {
+const CARRIER_WORDS = {
+  file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
+};
+// 形态比交法多一档：接口本身是一份信息，但没人能把接口当载体交出去。
+const FORM_WORDS = { ...CARRIER_WORDS, interface: '一个对外接口' };
+
+function edgeDetail(edge, infoIndex) {
   const edgeKey = `${edge.from}->${edge.to}`;
   const source = `<span class="mono text-xs">${value(edge.source?.refs?.join(' · '))}` +
     ` · ${esc(WORDS.labels.confirmedTime)}：${value(edge.source?.confirmed_at)}</span>`;
   const rows = [
     kv(WORDS.labels.edgeCategory, value(WORDS.category[edge.category] || edge.category)),
     kv(WORDS.labels.trigger, prose(edge.trigger)),
-    kv(WORDS.labels.carrier, value({
-      file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
-    }[edge.carrier] || edge.carrier)),
   ];
   if (edge.screening !== undefined) rows.push(kv(WORDS.labels.screening, prose(edge.screening)));
   rows.push(kv(WORDS.labels.concurrencyControl, prose(edge.concurrency_control)));
   rows.push(kv(WORDS.labels.source, source));
-  const payloads = (edge.payloads || []).map((payload) => `<div class="topo-payload"><dl class="kv">` +
-    `${kv(WORDS.labels.payload, prose(payload.content))}` +
-    `${kv(WORDS.labels.producedAt, value(payload.produced_at))}` +
-    `${kv(WORDS.labels.deliveredAt, value(payload.delivered_at))}</dl></div>`).join('');
+  const payloads = (edge.payloads || []).map((payload) => {
+    const info = infoIndex.get(payload.info) || {};
+    const blocks = Array.isArray(info.blocks) && info.blocks.length
+      ? `<ul class="topo-blocks">${info.blocks.map((b) => `<li>${prose(b)}</li>`).join('')}</ul>`
+      : value(undefined);
+    const sameAs = info.same_as
+      ? kv(WORDS.labels.infoSameAs, value(infoIndex.get(info.same_as)?.name || info.same_as))
+      : '';
+    return `<div class="topo-payload">` +
+      `<div class="topo-payload-head">${flag(info.confidence)}${value(info.name)}</div>` +
+      `<dl class="kv">${kv(WORDS.labels.infoWhat, prose(info.what))}` +
+      `${kv(WORDS.labels.infoBlocks, blocks)}` +
+      `${kv(WORDS.labels.infoForm, value(FORM_WORDS[info.form] || info.form))}` +
+      `${kv(WORDS.labels.infoOrigin, value(info.origin))}` +
+      `${kv(WORDS.labels.infoDestination, value(info.destination))}` +
+      `${sameAs}` +
+      `${kv(WORDS.labels.carrier, value(CARRIER_WORDS[payload.carrier] || payload.carrier))}` +
+      `${kv(WORDS.labels.producedAt, value(info.produced_at))}` +
+      `${kv(WORDS.labels.deliveredAt, value(payload.delivered_at))}</dl></div>`;
+  }).join('');
   const body = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.payload)}<span class="topo-acc-mark">${(edge.payloads || []).length}</span>` +
     `</summary><div class="topo-acc-body">${payloads}</div></details>`;
@@ -424,7 +446,8 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
   };
   const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
   const details = (data.nodes || []).map((node) => detail(data, node, enriched)).join('');
-  const edgeDetails = (data.edges || []).map((edge) => edgeDetail(edge)).join('');
+  const infoIndex = new Map((data.information || []).map((item) => [item.id, item]));
+  const edgeDetails = (data.edges || []).map((edge) => edgeDetail(edge, infoIndex)).join('');
   // 详情不再平铺成一条长页面靠滚动定位：全部收进隐藏仓库，点方块或连线时复制进弹层。
   // 折叠视图同理，默认藏起来，由「收起来看」切换——一屏只呈现一件事。
   const modal = `<div class="topo-modal" id="topo-modal" hidden>` +

@@ -74,7 +74,7 @@ nodes:
     system_prompt:
       file: "prompts/planner.v2.md"
       from: 1
-      to: 0
+      to: 6
     tools:
       - read
       - write
@@ -166,6 +166,7 @@ information:
         - "src/prompts.ts:80-110"
       confirmed_at: "2026-08-26"
   - id: reused-plan
+    same_as: nope
     name: "沿用的计划"
     what: "上一轮存进账本、本轮直接接着用的那份计划"
     blocks:

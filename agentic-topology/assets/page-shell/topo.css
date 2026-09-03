@@ -119,3 +119,6 @@
 .topo-mark.is-conc { border-color: var(--success); color: var(--success); }
 .topo-mark.is-fan { border-color: var(--primary); color: var(--primary); }
 .topo-sub { border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: calc(var(--radius) - 4px); padding: 10px 12px; background: color-mix(in oklab, var(--primary) 4%, var(--card)); }
+.topo-payload-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; margin-bottom: 6px; }
+.topo-blocks { margin: 0; padding-left: 16px; }
+.topo-blocks li { margin: 1px 0; }
