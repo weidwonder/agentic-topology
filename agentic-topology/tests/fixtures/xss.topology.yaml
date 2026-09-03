@@ -118,10 +118,10 @@ nodes:
 
 information:
   - id: info-01
-    name: "材料清册"
-    what: "材料清册"
+    name: "<img src=x onerror=alert(2)>材料清册"
+    what: "<script>alert(3)</script>&\"'"
     blocks:
-      - "材料清册"
+      - "<svg onload=alert(4)>"
     form: bundle
     produced_at: "整理材料清单时"
     origin: N1

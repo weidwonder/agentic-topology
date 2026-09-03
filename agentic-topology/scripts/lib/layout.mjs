@@ -1,6 +1,6 @@
 import { baseGroups } from './groups.mjs';
 import { measureLabel, wrapLineCount } from './measure.mjs';
-import { edgeLabel } from './marks.mjs';
+import { edgeLabel, edgeLabelParts } from './marks.mjs';
 import { foldSummary } from './interactions.mjs';
 
 const M = {
@@ -422,6 +422,7 @@ export function layout(data, { lang = 'zh' } = {}) {
     const geometry = pathGeometry(from, to, sourceGroup, targetGroup, paired ? M.PAIR_OFFSET : 0);
     // 线上写的是「这条线传的是哪几份信息」；什么情况下走这条线移进了浮层。
     const label = edgeLabel(edge, infoById, lang);
+    const labelParts = edgeLabelParts(edge, infoById, lang);
     const size = measureLabel(label);
     const placed = placeLabel(geometry, size, obstacles, warnings, edge);
     obstacles.push(labelBox(placed.point, size));
@@ -430,6 +431,7 @@ export function layout(data, { lang = 'zh' } = {}) {
       to: edge.to,
       d: geometry.d,
       label,
+      labelParts,
       labelX: round(placed.point.x),
       labelY: round(placed.point.y),
       labelW: size.w,

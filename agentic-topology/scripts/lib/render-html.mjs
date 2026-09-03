@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { layoutFolded } from './layout.mjs';
 import { applyFilter, foldSummary } from './interactions.mjs';
+import { FORM_MARK, LABEL_GAP } from './marks.mjs';
 import { renderMarkdown } from './markdown.mjs';
 
 const ASSET_DIR = fileURLToPath(new URL('../../assets/page-shell/', import.meta.url));
@@ -53,7 +54,10 @@ const WORDS = {
     deliveredAt: '什么时候交出去的',
     infoWhat: '这是什么', infoBlocks: '里面大致有什么', infoForm: '它本身是什么形态',
     infoOrigin: '从哪来', infoDestination: '到哪去', infoSameAs: '可能与哪份是同一份',
-    infoList: '这张图里流转的信息', infoCount: '份',
+    infoList: '这张图里流转的信息', infoCount: '份', infoNameCol: '叫什么',
+    infoEmpty: '这张图里还没有流转的信息', seeAllInfo: '看全部',
+    edgesCarrying: '条线传它', infoFlow: '从哪来到哪去', infoLines: '流经哪几条线',
+    back: '回到图上',
     limits: {
       steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
     },
@@ -103,6 +107,14 @@ function prose(text, fallback = WORDS.labels.notSet) {
   return `<div class="topo-md">${renderMarkdown(String(raw))}</div>`;
 }
 
+/** 某个对象名下的核实条目收成一枚角标，鼠标停上去看全文。方块与信息清单共用。 */
+function warnBadge(checklist, ref) {
+  const mine = (checklist || []).filter((item) => item.ref === ref);
+  if (!mine.length) return '';
+  return `<span class="topo-warn" title="${esc(mine.map((item) => item.text).join('\n'))}"` +
+    ` aria-label="${esc(WORDS.labels.checklist)}">⚠ ${mine.length}</span>`;
+}
+
 function nodeHtml(node, box, checklist = []) {
   const confidence = node.confidence || 'unread';
   // 底色只表示「这是 AI 还是程序还是岔路口」，可信度改用虚线边框 + 徽章表示。
@@ -119,11 +131,7 @@ function nodeHtml(node, box, checklist = []) {
   }
   const labels = WORDS.kind;
   // 核对清单不再单列一块：本节点该核实的条目收成右上角一枚角标，鼠标停上去就看得到。
-  const mine = checklist.filter((item) => item.ref === node.id);
-  const warn = mine.length
-    ? `<span class="topo-warn" title="${esc(mine.map((item) => item.text).join('\n'))}"` +
-      ` aria-label="${esc(WORDS.labels.checklist)}">⚠ ${mine.length}</span>`
-    : '';
+  const warn = warnBadge(checklist, node.id);
   const top = `<div class="topo-node-top"><span class="topo-node-kind">${value(labels[node.kind])}</span>` +
     `<span class="topo-node-id">${value(node.id)}</span>${flag(confidence, true)}${warn}</div>`;
   // data-x / data-y 留着「恢复自动摆放」时用：拖过之后要能退回程序算出来的原位。
@@ -157,8 +165,11 @@ function overview(data, pageLayout, staleness) {
     return `<path class="topo-edge ${cls}${trust}" data-edge-id="${value(edgeId)}"` +
       ` d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
       `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}">${tip}</path>` +
-      `<text class="topo-elabel" data-edge-id="${value(edgeId)}" x="${edge.labelX}"` +
-      ` y="${edge.labelY}">${value(edge.label)}</text>`;
+      `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">` +
+      `${(edge.labelParts || [{ info: null, text: edge.label }]).map((part, index) =>
+        `${index ? esc(LABEL_GAP) : ''}<tspan${part.info
+          ? ` class="topo-elabel-name" data-info-id="${value(part.info)}"` : ''}>` +
+        `${value(part.text)}</tspan>`).join('')}</text>`;
   }).join('');
   const checklist = data.checklist || [];
   const nodes = [...pageLayout.nodes.entries()].map(([id, box]) =>
@@ -203,19 +214,22 @@ function overview(data, pageLayout, staleness) {
   // 不用再猜一个像素数字；正文走 Markdown，因为 entry 常写成带小标题与列表的一段说明。
   const pill = `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.start)}</div>` +
     `<div class="topo-md">${renderMarkdown(data.graph?.entry)}</div></div>`;
+  // 高亮状态栏：亮着的时候才显示，说清亮的是哪一份、它是什么、流经几条线，
+  // 并给一个不用去猜的退出按钮。
+  const infoBar = '<div class="topo-infobar" data-infobar></div>';
   const canvasBar = `<div class="topo-canvas-bar" data-canvas-bar data-dirty="0">` +
     `<button class="btn btn-outline btn-sm" data-save-layout>${esc(WORDS.labels.saveLayout)}</button>` +
     `<button class="btn btn-ghost btn-sm" data-reset-layout>${esc(WORDS.labels.resetLayout)}</button>` +
     `<span class="topo-canvas-hint" data-canvas-hint>${esc(WORDS.labels.dragHint)}</span></div>`;
   // 发起说明与收尾说明 MUST 都待在画布外面：它们是这张图的前言和后记，不是图上的元素。
-  const diagram = `${pill}<div class="topo-wrap">${canvasBar}` +
+  const diagram = `${pill}${infoBar}<div class="topo-wrap">${canvasBar}` +
     `<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
     ` aria-hidden="true">${markers}${edges}</svg>${frames}${nodes}</div></div>`;
   // 收尾块与发起块共用 .topo-pill 这一套外观，两头 MUST 看起来是一对。
-  const ending = `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.end)}</div>` +
-    `${exits}</div></div></section>`;
+  const ending = `${infoCard(data)}<div class="topo-pill"><div class="topo-pill-head">` +
+    `${esc(WORDS.labels.end)}</div>${exits}</div></div></section>`;
   // 核对清单不再单开一块：条目已经挂到各自的方块与连线上（右上角角标 / 线上的悬浮提示），
   // 顶部只留一个总数，省得同一份信息在页面上出现两遍。
   return `${head}${diagram}${ending}`;
@@ -303,7 +317,10 @@ function linksSection(node, data) {
   const item = (edge, direction) => {
     const id = direction === WORDS.labels.in ? edge.from : edge.to;
     const other = data.nodes.find((candidate) => candidate.id === id);
-    const payloads = (edge.payloads || []).map((payload) => value(payload.content)).join('、');
+    // 与线上同一套说法：这条线传的是哪几份信息。
+    const infoById = new Map((data.information || []).map((info) => [info.id, info]));
+    const payloads = (edge.payloads || [])
+      .map((payload) => value(infoById.get(payload.info)?.name || payload.info)).join('、');
     return `<li class="list-item"><span class="badge badge-outline">${esc(direction)}</span>` +
       `<span class="text-xs grow">${other ? value(other.name) : value(id)}：${payloads}</span></li>`;
   };
@@ -400,6 +417,79 @@ function edgeDetail(edge, infoIndex) {
     `</div></details>${body}</div></section>`;
 }
 
+
+/** 一份信息流经哪几条线：按引用它的边算，图上与清单里说的 MUST 是同一个数。 */
+function edgesCarrying(data, infoId) {
+  return (data.edges || []).filter((edge) =>
+    (edge.payloads || []).some((payload) => payload.info === infoId));
+}
+
+/** 信息名上的可信度标记：MUST NOT 占用连线的虚实通道，所以走文字后缀 + 徽章。 */
+function infoName(item) {
+  return `<span class="topo-info-name" data-info-id="${value(item.id)}" role="button" tabindex="0">` +
+    `${value(FORM_MARK[item.form] || FORM_MARK.other)} ${value(item.name)}` +
+    `${item.confidence === 'certain' || item.confidence === undefined ? '' : flag(item.confidence)}</span>`;
+}
+
+/** 画布下方的概览卡：只列前 3 份，其余进全量视图。 */
+function infoCard(data) {
+  const list = data.information || [];
+  if (!list.length) {
+    return `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.infoList)}</div>` +
+      `<div class="text-sm muted">${esc(WORDS.labels.infoEmpty)}</div></div>`;
+  }
+  const rows = list.slice(0, 3).map((item) => {
+    const count = edgesCarrying(data, item.id).length;
+    return `<li class="topo-info-row">${infoName(item)}` +
+      `${warnBadge(data.checklist, item.name || item.id)}` +
+      `<span class="text-xs muted grow">${value(item.what)}</span>` +
+      `<span class="text-xs muted">${count} ${esc(WORDS.labels.edgesCarrying)}</span></li>`;
+  }).join('');
+  const more = `<button class="btn btn-outline btn-sm" data-goto-info>` +
+    `${esc(WORDS.labels.seeAllInfo)} ${list.length} ${esc(WORDS.labels.infoCount)}</button>`;
+  return `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.infoList)}` +
+    `<span class="topo-acc-mark">${list.length} ${esc(WORDS.labels.infoCount)}</span></div>` +
+    `<ul class="topo-info-list">${rows}</ul>${more}</div>`;
+}
+
+/** 全量视图：七列列全。MUST 有自己的返回入口，不能只靠点某一份退出。 */
+function infoView(data) {
+  const list = data.information || [];
+  const head = `<section id="view-info" class="view" hidden><div class="app-bar">` +
+    `<button class="btn btn-outline btn-sm" data-back>${esc(WORDS.labels.back)}</button>` +
+    `<span class="topo-crumb">${esc(WORDS.labels.infoList)}</span><span class="grow"></span>` +
+    `<span class="topo-flag is-sure">${list.length} ${esc(WORDS.labels.infoCount)}</span></div>` +
+    `<div class="screen">`;
+  if (!list.length) {
+    return `${head}<div class="alert"><strong>${esc(WORDS.labels.infoEmpty)}</strong></div></div></section>`;
+  }
+  const rows = list.map((item) => {
+    const blocks = Array.isArray(item.blocks) && item.blocks.length
+      ? `<ul class="topo-blocks">${item.blocks.map((b) => `<li>${prose(b)}</li>`).join('')}</ul>`
+      : value(undefined);
+    const carrying = edgesCarrying(data, item.id);
+    const lines = carrying.map((edge) => `${value(edge.from)}→${value(edge.to)}`).join('、');
+    const same = item.same_as
+      ? `<div class="text-xs muted">${esc(WORDS.labels.infoSameAs)}：` +
+        `${value(list.find((x) => x.id === item.same_as)?.name || item.same_as)}</div>` : '';
+    return `<tr data-info-row="${value(item.id)}">` +
+      `<td>${infoName(item)}${warnBadge(data.checklist, item.name || item.id)}${same}</td>` +
+      `<td>${prose(item.what)}</td>` +
+      `<td>${blocks}</td>` +
+      `<td>${value(FORM_WORDS[item.form] || item.form)}</td>` +
+      `<td class="mono text-xs">${value(item.origin)} → ${value(item.destination)}</td>` +
+      `<td class="text-xs">${carrying.length} ${esc(WORDS.labels.edgesCarrying)}<br>` +
+      `<span class="mono muted">${lines}</span></td>` +
+      `<td class="mono text-xs">${value(item.source?.refs?.join(' · '))}<br>` +
+      `<span class="muted">${value(item.source?.confirmed_at)}</span></td></tr>`;
+  }).join('');
+  const header = [WORDS.labels.infoNameCol, WORDS.labels.infoWhat, WORDS.labels.infoBlocks,
+    WORDS.labels.infoForm, WORDS.labels.infoFlow, WORDS.labels.infoLines, WORDS.labels.source]
+    .map((h) => `<th>${esc(h)}</th>`).join('');
+  return `${head}<div class="topo-table-wrap"><table class="topo-table">` +
+    `<thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div></div></section>`;
+}
+
 function folded(data, warnings) {
   const summary = foldSummary(data);
   const foldedLayout = layoutFolded(data);
@@ -459,7 +549,7 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
     `${esc(WORDS.labels.close)}</button></div>` +
     `<div class="topo-modal-body" id="topo-modal-body"></div></div></div>`;
   const body = `<div class="topo-views">${overview(payload, pageLayout, enriched.staleness)}` +
-    `${folded(data, warnings)}` +
+    `${folded(data, warnings)}${infoView(payload)}` +
     `<div id="detail-store" hidden>${details}${edgeDetails}</div>${modal}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)
     .replace('<!--SLOT:DATA-->', json).replace('<!--SLOT:BODY-->', body).replace('<!--SLOT:SCRIPT-->', APP);

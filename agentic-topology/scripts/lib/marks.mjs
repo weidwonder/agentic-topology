@@ -30,7 +30,7 @@ const MORE_TEXT = {
  * 至多列 LABEL_MAX_ITEMS 份，超出时补一句「等 N 份」，N 是这条线引用的**总**份数
  * ——写成「还有 N 份」会让人以为总数是 3+N。
  */
-export function edgeLabel(edge, infoById, lang = 'zh') {
+export function edgeLabelParts(edge, infoById, lang = 'zh') {
   const refs = Array.isArray(edge?.payloads) ? edge.payloads : [];
   const parts = refs.slice(0, LABEL_MAX_ITEMS).map((ref) => {
     const name = String(infoById.get(ref?.info)?.name ?? ref?.info ?? '');
@@ -38,8 +38,17 @@ export function edgeLabel(edge, infoById, lang = 'zh') {
       ? `${[...name].slice(0, LABEL_MAX_NAME).join('')}…`
       : name;
     // 小标取这条引用自己的交法：同一条线上几份可以各不相同。
-    return `${CARRIER_MARK[ref?.carrier] || CARRIER_MARK.other} ${shown}`;
+    return { info: ref?.info ?? null, text: `${CARRIER_MARK[ref?.carrier] || CARRIER_MARK.other} ${shown}` };
   });
-  if (refs.length > LABEL_MAX_ITEMS) parts.push((MORE_TEXT[lang] || MORE_TEXT.zh)(refs.length));
-  return parts.join('  ');
+  // 「等 N 份」不指向任何一份，所以不带 info——点它不该高亮谁。
+  if (refs.length > LABEL_MAX_ITEMS) {
+    parts.push({ info: null, text: (MORE_TEXT[lang] || MORE_TEXT.zh)(refs.length) });
+  }
+  return parts;
+}
+
+export const LABEL_GAP = '  ';
+
+export function edgeLabel(edge, infoById, lang = 'zh') {
+  return edgeLabelParts(edge, infoById, lang).map((part) => part.text).join(LABEL_GAP);
 }
