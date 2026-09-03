@@ -12,6 +12,9 @@
 /.worktrees/
 agentic-topology/tests/tmp/
 
+# 截图工具的中间产物
+/.shoot/
+
 # 开发期产物与本地上下文——留在本地，不进仓库
 /.claude/
 /engineering-context/

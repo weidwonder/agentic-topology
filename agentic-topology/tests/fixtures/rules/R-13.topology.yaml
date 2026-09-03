@@ -116,4 +116,6 @@ nodes:
         - "src/dispatch.ts:19-71"
       confirmed_at: "2026-08-26"
 
+information: []
+
 edges: []

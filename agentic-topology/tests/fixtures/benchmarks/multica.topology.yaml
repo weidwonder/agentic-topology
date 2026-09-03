@@ -314,15 +314,201 @@ nodes:
         - "server/pkg/agent/codex.go:263-286"
       confirmed_at: "2026-08-28"
 
+information:
+  - id: info-01
+    name: "单个 Task 结构体"
+    what: "单个 Task 结构体（含 Agent 定义、Repos、触发评论/聊天/quick-create/autopilot 等全部上下文字段）及分配到的并发槽位 slot"
+    blocks:
+      - "单个 Task 结构体（含 Agent 定义"
+      - "Repos"
+      - "触发评论/聊天/quick-create/autopilot 等全部上下文字段）及分配到的并发槽位 slot"
+    form: bundle
+    produced_at: "ClaimTasksWSFirst/ClaimTasks 从服务器批量申领返回时"
+    origin: POLL_DISPATCH
+    destination: HANDLE_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-02
+    name: "释放回信号量的并发槽位 + 一次 wakeup 信号（催促 runBatchPoller 不必等 PollInterval 就立刻再申领一轮）"
+    what: "释放回信号量的并发槽位 + 一次 wakeup 信号（催促 runBatchPoller 不必等 PollInterval 就立刻再申领一轮）"
+    blocks:
+      - "释放回信号量的并发槽位"
+      - "一次 wakeup 信号（催促 runBatchPoller 不必等 PollInterval 就立刻再申领一轮）"
+    form: event
+    produced_at: "handleTask 返回时"
+    origin: HANDLE_TASK
+    destination: POLL_DISPATCH
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-03
+    name: "Task 与运行上下文"
+    what: "Task、provider、并发槽位 slot、task 专属 logger、可取消的 runCtx"
+    blocks:
+      - "Task"
+      - "provider"
+      - "并发槽位 slot"
+      - "task 专属 logger"
+      - "可取消的 runCtx"
+    form: bundle
+    produced_at: "handleTask 完成 runtime 校验与本地目录锁获取之后"
+    origin: HANDLE_TASK
+    destination: RUN_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-04
+    name: "TaskResult"
+    what: "TaskResult（Status/Comment/SessionID/WorkDir/Usage/FailureReason 等）"
+    blocks:
+      - "TaskResult（Status/Comment/SessionID/WorkDir/Usage/FailureReason 等）"
+    form: bundle
+    produced_at: "runTask 把 agent.Result 分类完毕时"
+    origin: RUN_TASK
+    destination: HANDLE_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-05
+    name: "error"
+    what: "error（仅当尚未产出 TaskResult 就失败：如任务缺 workspace_id、鉴权 token 无效、skill bundle 下载失败、执行环境准备失败）"
+    blocks:
+      - "error（仅当尚未产出 TaskResult 就失败：如任务缺 workspace_id"
+      - "鉴权 token 无效"
+      - "skill bundle 下载失败"
+      - "执行环境准备失败）"
+    form: bundle
+    produced_at: "runTask 准备阶段任意一步失败时"
+    origin: RUN_TASK
+    destination: HANDLE_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-06
+    name: "Task（原始值）"
+    what: "Task（此时 PriorSessionID 等字段仍是任务原始值）、provider"
+    blocks:
+      - "Task（此时 PriorSessionID 等字段仍是任务原始值）"
+      - "provider"
+    form: bundle
+    produced_at: "runTask 首次进入执行阶段时"
+    origin: RUN_TASK
+    destination: BUILD_PROMPT
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-07
+    name: "Task（已清空续接）"
+    what: "Task（PriorSessionID 已被清空、PriorSessionResumeUnavailable 置 true）、provider"
+    blocks:
+      - "Task（PriorSessionID 已被清空"
+      - "PriorSessionResumeUnavailable 置 true）"
+      - "provider"
+    form: bundle
+    produced_at: "runTask 判定需要清空会话重试时（shouldRetryWithFreshSession 命中）"
+    origin: RUN_TASK
+    destination: BUILD_PROMPT
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-08
+    name: "拼装完成的首轮用户消息字符串"
+    what: "拼装完成的首轮用户消息字符串"
+    blocks:
+      - "拼装完成的首轮用户消息字符串"
+    form: bundle
+    produced_at: "BuildPrompt 返回时"
+    origin: BUILD_PROMPT
+    destination: RUN_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-09
+    name: "首轮用户消息 prompt、ExecOptions（模型/思考等级/service tier/MCP 配置/超时与看门狗阈值/工作目录/daemon 默认参数与 agent 自定义参数），ResumeSessionID 非空"
+    what: "首轮用户消息 prompt、ExecOptions（模型/思考等级/service tier/MCP 配置/超时与看门狗阈值/工作目录/daemon 默认参数与 agent 自定义参数），ResumeSessionID 非空"
+    blocks:
+      - "首轮用户消息 prompt"
+      - "ExecOptions（模型/思考等级/service tier/MCP 配置/超时"
+      - "看门狗阈值/工作目录/daemon 默认参数"
+      - "agent 自定义参数），ResumeSessionID 非空"
+    form: bundle
+    produced_at: "runTask 首次组装 ExecOptions 时"
+    origin: RUN_TASK
+    destination: AGENT_BACKEND
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-10
+    name: "同上，但 ResumeSessionID 清空、ResumeExpected/ResumeContinuityNotice 改为反映“恢复失败”"
+    what: "同上，但 ResumeSessionID 清空、ResumeExpected/ResumeContinuityNotice 改为反映“恢复失败”"
+    blocks:
+      - "同上，但 ResumeSessionID 清空"
+      - "ResumeExpected/ResumeContinuityNotice 改为反映“恢复失败”"
+    form: bundle
+    produced_at: "runTask 判定需要清空会话重试时"
+    origin: RUN_TASK
+    destination: AGENT_BACKEND
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-11
+    name: "流式 Message"
+    what: "流式 Message（text/thinking/tool-use/tool-result/status/error/log），供 executeAndDrain 边收边转发给服务器（ReportTaskMessages）"
+    blocks:
+      - "流式 Message（text/thinking/tool-use/tool-result/status/error/log），供 executeAndDrain 边收边转发给服务器（ReportTaskMessages）"
+    form: bundle
+    produced_at: "Agent 会话进行中随事件产生"
+    origin: AGENT_BACKEND
+    destination: RUN_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+  - id: info-12
+    name: "最终 agent.Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
+    what: "最终 agent.Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
+    blocks:
+      - "最终 agent.Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
+    form: bundle
+    produced_at: "Agent 会话结束时（claude 的 result 事件 / codex 的 turn 完成，或被 idle watchdog / ctx 取消强制中止）"
+    origin: AGENT_BACKEND
+    destination: RUN_TASK
+    confidence: certain
+    source:
+      refs:
+        - "server/internal/daemon/daemon.go:6455-6480"
+      confirmed_at: "2026-08-28"
+
 edges:
   - from: POLL_DISPATCH
     to: HANDLE_TASK
     category: normal
     trigger: "runBatchPoller 一次批量申领拿到任务后，为每个任务分配一个并发槽位并各起一个 goroutine 调用 handleTask"
-    carrier: bundle
     payloads:
-      - content: "单个 Task 结构体（含 Agent 定义、Repos、触发评论/聊天/quick-create/autopilot 等全部上下文字段）及分配到的并发槽位 slot"
-        produced_at: "ClaimTasksWSFirst/ClaimTasks 从服务器批量申领返回时"
+      - info: info-01
+        carrier: bundle
         delivered_at: "runBatchPoller 起 goroutine 调用 d.handleTask(parentCtx, t, slot) 时"
     concurrency_control: "按并发槽位数量排队；槽位耗尽时下一轮申领会先阻塞等待空槽（最多等 taskSlotWaitTimeout=2s，超时则退避重试）"
     confidence: certain
@@ -335,10 +521,9 @@ edges:
     to: POLL_DISPATCH
     category: normal
     trigger: "handleTask 对应的 goroutine 执行完毕，无论任务最终是完成、失败还是被取消"
-    carrier: event
     payloads:
-      - content: "释放回信号量的并发槽位 + 一次 wakeup 信号（催促 runBatchPoller 不必等 PollInterval 就立刻再申领一轮）"
-        produced_at: "handleTask 返回时"
+      - info: info-02
+        carrier: event
         delivered_at: "runBatchPoller 派发时注册的 deferred 回调里（sem <- slot; signalPollerWakeup(wakeup)）"
     concurrency_control: "信号量天然去重；wakeup channel 是容量 1 的非阻塞 channel，多次释放只会保留一次待处理的唤醒"
     confidence: certain
@@ -355,10 +540,9 @@ edges:
       到对应路径的互斥锁。与此同时 HANDLE_TASK 起的后台协程会持续轮询服务器
       任务状态；一旦服务器侧任务转入终止态或任务行被删除，会经同一个 runCtx
       取消这次调用（带外信号，见 HANDLE_TASK 节点 responsibility）。
-    carrier: bundle
     payloads:
-      - content: "Task、provider、并发槽位 slot、task 专属 logger、可取消的 runCtx"
-        produced_at: "handleTask 完成 runtime 校验与本地目录锁获取之后"
+      - info: info-03
+        carrier: bundle
         delivered_at: "调用 d.runner.run(runCtx, task, provider, slot, taskLog) 时"
     concurrency_control: "不会发生（每个 handleTask 实例只调用一次 runTask，重试发生在 RUN_TASK 内部，不重新经过这条边）"
     confidence: certain
@@ -371,13 +555,12 @@ edges:
     to: HANDLE_TASK
     category: normal
     trigger: "runTask 返回（正常产出结果、或在真正调用 Agent 之前的准备阶段就失败、或被 HANDLE_TASK 的取消协程经 runCtx 中断）"
-    carrier: bundle
     payloads:
-      - content: "TaskResult（Status/Comment/SessionID/WorkDir/Usage/FailureReason 等）"
-        produced_at: "runTask 把 agent.Result 分类完毕时"
+      - info: info-04
+        carrier: bundle
         delivered_at: "函数返回值"
-      - content: "error（仅当尚未产出 TaskResult 就失败：如任务缺 workspace_id、鉴权 token 无效、skill bundle 下载失败、执行环境准备失败）"
-        produced_at: "runTask 准备阶段任意一步失败时"
+      - info: info-05
+        carrier: bundle
         delivered_at: "函数返回值"
     concurrency_control: "不会发生（一次同步调用一次返回）"
     confidence: certain
@@ -390,13 +573,12 @@ edges:
     to: BUILD_PROMPT
     category: normal
     trigger: "每次真正要调用 Agent 之前都会先拼一次首轮消息——首次调用一次，若触发“清空会话重试”还会再拼一次全新的（不带 resume 提示）"
-    carrier: bundle
     payloads:
-      - content: "Task（此时 PriorSessionID 等字段仍是任务原始值）、provider"
-        produced_at: "runTask 首次进入执行阶段时"
+      - info: info-06
+        carrier: bundle
         delivered_at: "调用 BuildPrompt(task, provider) 时"
-      - content: "Task（PriorSessionID 已被清空、PriorSessionResumeUnavailable 置 true）、provider"
-        produced_at: "runTask 判定需要清空会话重试时（shouldRetryWithFreshSession 命中）"
+      - info: info-07
+        carrier: bundle
         delivered_at: "调用 BuildPrompt(task, provider) 第二次时"
     concurrency_control: "不会发生（同一个 goroutine 内顺序调用）"
     confidence: certain
@@ -410,10 +592,9 @@ edges:
     to: RUN_TASK
     category: normal
     trigger: "BuildPrompt 每次调用都同步返回"
-    carrier: bundle
     payloads:
-      - content: "拼装完成的首轮用户消息字符串"
-        produced_at: "BuildPrompt 返回时"
+      - info: info-08
+        carrier: bundle
         delivered_at: "同一行赋值给 runTask 内的 prompt/freshPrompt 变量"
     concurrency_control: "不会发生"
     confidence: certain
@@ -434,13 +615,12 @@ edges:
       调用期间若 HANDLE_TASK 的取消协程或 daemon 侧 idle watchdog 触发，会经
       同一个可取消的 ctx 中断这次调用（带外信号，说明见 AGENT_BACKEND.stop 与
       HANDLE_TASK 节点）。
-    carrier: bundle
     payloads:
-      - content: "首轮用户消息 prompt、ExecOptions（模型/思考等级/service tier/MCP 配置/超时与看门狗阈值/工作目录/daemon 默认参数与 agent 自定义参数），ResumeSessionID 非空"
-        produced_at: "runTask 首次组装 ExecOptions 时"
+      - info: info-09
+        carrier: bundle
         delivered_at: "调用 backend.Execute(agentCtx, prompt, opts) 时（经 executeAndDrain 包一层：驱动流式消息转发与 idle watchdog）"
-      - content: "同上，但 ResumeSessionID 清空、ResumeExpected/ResumeContinuityNotice 改为反映“恢复失败”"
-        produced_at: "runTask 判定需要清空会话重试时"
+      - info: info-10
+        carrier: bundle
         delivered_at: "第二次调用 backend.Execute 时"
     concurrency_control: "不会发生（同一个 goroutine 内先后至多两次同步调用，不并发）"
     confidence: certain
@@ -455,13 +635,12 @@ edges:
     to: RUN_TASK
     category: normal
     trigger: "每次 backend.Execute 会话结束（正常产出结果 / 超时 / 被上游 ctx 取消 / idle watchdog 强制终止）"
-    carrier: bundle
     payloads:
-      - content: "流式 Message（text/thinking/tool-use/tool-result/status/error/log），供 executeAndDrain 边收边转发给服务器（ReportTaskMessages）"
-        produced_at: "Agent 会话进行中随事件产生"
+      - info: info-11
+        carrier: bundle
         delivered_at: "session.Messages channel 持续推送，executeAndDrain 每 500ms 或收到即批量上报"
-      - content: "最终 agent.Result（Status/Output/Error/SessionID/Usage/ResumeRejected）"
-        produced_at: "Agent 会话结束时（claude 的 result 事件 / codex 的 turn 完成，或被 idle watchdog / ctx 取消强制中止）"
+      - info: info-12
+        carrier: bundle
         delivered_at: "session.Result channel 送出一次；executeAndDrain 收到后返回给 runTask"
     concurrency_control: "不会发生"
     confidence: certain

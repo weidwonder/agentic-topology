@@ -86,7 +86,6 @@
 .topo-acc-mark { margin-left: auto; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
 .topo-acc-item[open] > .topo-acc-head { background: var(--muted); }
 .topo-acc-body { padding: 4px 14px 14px; }
-.topo-checklist-scroll { max-height: 320px; overflow-y: auto; }
 
 /* 详情弹层：点方块或连线弹出来，点浮层外 / 关闭按钮 / Esc 都能关。 */
 .topo-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -119,3 +118,33 @@
 .topo-mark.is-conc { border-color: var(--success); color: var(--success); }
 .topo-mark.is-fan { border-color: var(--primary); color: var(--primary); }
 .topo-sub { border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: calc(var(--radius) - 4px); padding: 10px 12px; background: color-mix(in oklab, var(--primary) 4%, var(--card)); }
+.topo-payload-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; margin-bottom: 6px; }
+.topo-blocks { margin: 0; padding-left: 16px; }
+.topo-blocks li { margin: 1px 0; }
+/* 信息清单：画布下方的概览卡与全量视图两处，样式 MUST 一致——同一份东西在两处
+   长得不一样，看的人会以为是两回事。 */
+.topo-info-list { list-style: none; margin: 6px 0 8px; padding: 0; }
+.topo-info-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.topo-info-row:last-child { border-bottom: 0; }
+.topo-info-name { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.topo-info-name:hover { color: var(--primary); }
+.topo-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.topo-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.topo-table th, .topo-table td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+.topo-table th { font-size: 11px; color: var(--muted-foreground); font-weight: 600; white-space: nowrap; }
+.topo-table tbody tr:last-child td { border-bottom: 0; }
+/* 线上的信息名可点：它现在是高亮的触发点，不再是连线浮层的入口——
+   一次点击不能同时干两件事。 */
+.topo-elabel-name { cursor: pointer; }
+.topo-elabel-name:hover { fill: var(--primary); }
+/* 高亮时其余元素淡出。MUST NOT 复用 .is-hidden：那是筛选用的，
+   两者会互相把对方的状态抹掉。 */
+.topo-dim { opacity: .14; }
+.topo-lit { stroke-width: 3.2px; }
+text.topo-lit { fill: var(--primary); stroke-width: 3.5px; }
+.topo-infobar { display: none; align-items: center; gap: 10px; margin: 6px 0; padding: 7px 11px;
+  border: 1px solid color-mix(in oklab, var(--primary) 30%, var(--border)); border-radius: var(--radius);
+  background: color-mix(in oklab, var(--primary) 6%, var(--card)); font-size: 12px; }
+.topo-infobar[data-lit] { display: flex; }
+/* 清单标题后面跟着的计数徽章要有间距——「这张图里流转的信息4 份」是贴在一起的。 */
+.topo-pill-head .topo-acc-mark { margin-left: 8px; }

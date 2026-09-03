@@ -27,10 +27,13 @@ test('5 个传递物全部列出，产生与传递时机各自可见', () => {
     assert.ok(s.includes(c), `漏了传递物「${c}」`);
 });
 
-test('同向合并的边，多个传递物逐个分别列出', () => {
+test('一条线引用的每份信息逐个分别列出，各带自己的交法与交出时机', () => {
   const s = seg('base.topology.yaml', 'ed2.html', 'N1->N2');
   assert.equal((s.match(/什么时候造出来的/g) || []).length, 2);
-  assert.ok(s.includes('材料清册') && s.includes('用来比对的四个指纹'));
+  assert.ok(s.includes('材料清册') && s.includes('四个指纹'), '两份信息的名字都要出现');
+  assert.equal((s.match(/靠什么交过去/g) || []).length, 2, '交法是每条引用各写各的，不是整条边一个');
+  assert.ok(s.includes('用来判断材料与要求有没有变过的四个比对值'), '要展开被引用信息的一句话说明');
+  assert.ok(s.includes('材料内容指纹'), '要展开被引用信息的组成');
 });
 
 test('父子回传边的「收下之前先查什么」显著呈现', () => {

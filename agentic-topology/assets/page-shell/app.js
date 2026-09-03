@@ -30,6 +30,70 @@ function syncFilters() {
     element.classList.toggle('is-hidden', !visibleEdges.has(element.dataset.edgeId));
 }
 
+// ---- 高亮：这份东西流经哪几条线 --------------------------------------------
+// 淡出用 .topo-dim，MUST NOT 复用筛选的 .is-hidden——两套状态共用一个类，
+// 取消筛选会把高亮一起抹掉，取消高亮又会把筛掉的东西放回来。
+
+let litInfo = null;
+
+function edgesCarrying(data, infoId) {
+  return (data.edges || []).filter((edge) =>
+    (edge.payloads || []).some((payload) => payload.info === infoId));
+}
+
+function clearHighlight() {
+  litInfo = null;
+  for (const element of document.querySelectorAll('.topo-dim')) element.classList.remove('topo-dim');
+  for (const element of document.querySelectorAll('.topo-lit')) element.classList.remove('topo-lit');
+  const bar = document.querySelector('[data-infobar]');
+  if (bar) { delete bar.dataset.lit; bar.replaceChildren(); }
+}
+
+function highlightInfo(infoId) {
+  const data = readData();
+  if (!data) return;
+  const info = (data.information || []).find((item) => item.id === infoId);
+  if (!info) return;
+  // 再点一次同一份就是取消——这是唯一不需要找按钮的退出方式。
+  if (litInfo === infoId) { clearHighlight(); return; }
+  clearHighlight();
+  litInfo = infoId;
+  const carrying = edgesCarrying(data, infoId);
+  const litEdges = new Set(carrying.map((edge) => `${edge.from}->${edge.to}`));
+  const litNodes = new Set();
+  for (const edge of carrying) { litNodes.add(edge.from); litNodes.add(edge.to); }
+  // 被高亮连线两端的方块保持全亮：只亮线不亮两头，看的人得自己顺着线找端点。
+  for (const element of document.querySelectorAll('#view-overview [data-node-id]'))
+    element.classList.toggle('topo-dim', !litNodes.has(element.dataset.nodeId));
+  for (const element of document.querySelectorAll('#view-overview [data-edge-id]')) {
+    const lit = litEdges.has(element.dataset.edgeId);
+    element.classList.toggle('topo-dim', !lit);
+    element.classList.toggle('topo-lit', lit);
+  }
+  for (const label of document.querySelectorAll('#view-overview text.topo-elabel')) {
+    const lit = [...label.querySelectorAll('[data-info-id]')]
+      .some((span) => span.dataset.infoId === infoId);
+    label.classList.toggle('topo-dim', !lit);
+    label.classList.toggle('topo-lit', lit);
+  }
+  const bar = document.querySelector('[data-infobar]');
+  if (bar) {
+    bar.dataset.lit = infoId;
+    const name = document.createElement('strong');
+    name.textContent = info.name || info.id;
+    const what = document.createElement('span');
+    what.className = 'grow muted';
+    what.textContent = info.what || '';
+    const count = document.createElement('span');
+    count.textContent = data.ui?.carrying?.[infoId] ?? String(carrying.length);
+    const close = document.createElement('button');
+    close.className = 'btn btn-ghost btn-sm';
+    close.textContent = data.ui?.clearLit ?? '';
+    close.dataset.clearLit = '';
+    bar.replaceChildren(name, what, count, close);
+  }
+}
+
 // ---- 详情弹层 --------------------------------------------------------------
 // 详情全部预渲染在 #detail-store 里，弹层只负责把对应那一段搬到眼前。
 // 这样离线单文件不用任何模板引擎，点开也不会有一帧空白。
@@ -51,13 +115,19 @@ function closeModal() {
   document.getElementById('topo-modal-body')?.replaceChildren();
 }
 
-function showFolded(folded) {
-  const overview = document.getElementById('view-overview');
-  const foldedView = document.getElementById('view-folded');
-  if (!overview || !foldedView) return;
-  overview.hidden = folded;
-  foldedView.hidden = !folded;
+const VIEW_IDS = ['view-overview', 'view-folded', 'view-info'];
+
+/** 一屏只呈现一件事：切到哪个就只显示哪个，其余一律收起来。 */
+function showView(id) {
+  for (const viewId of VIEW_IDS) {
+    const view = document.getElementById(viewId);
+    if (view) view.hidden = viewId !== id;
+  }
   window.scrollTo({ top: 0 });
+}
+
+function showFolded(folded) {
+  showView(folded ? 'view-folded' : 'view-overview');
 }
 
 // ---- 连线重算 --------------------------------------------------------------
@@ -284,6 +354,11 @@ function serializePage() {
   const clone = document.documentElement.cloneNode(true);
   // 筛选状态、打开的弹层都是这一次看图的临时状态，MUST NOT 焊进存回去的文件。
   for (const hidden of clone.querySelectorAll('.is-hidden')) hidden.classList.remove('is-hidden');
+  // 高亮同理：它是这一次看图的临时状态，存回去的文件 MUST 是干净的。
+  for (const dim of clone.querySelectorAll('.topo-dim')) dim.classList.remove('topo-dim');
+  for (const lit of clone.querySelectorAll('.topo-lit')) lit.classList.remove('topo-lit');
+  const infobar = clone.querySelector('[data-infobar]');
+  if (infobar) { infobar.removeAttribute('data-lit'); infobar.replaceChildren(); }
   for (const checked of clone.querySelectorAll('[data-filter-dimension]')) checked.removeAttribute('checked');
   const modal = clone.querySelector('#topo-modal');
   if (modal) {
@@ -313,7 +388,7 @@ async function saveLayout() {
       await writable.write(html);
       await writable.close();
       markDirty(false);
-      setHint('位置已经写回文件了');
+      setHint(readData()?.ui?.savedOk ?? '');
       return;
     } catch (error) {
       if (error && error.name === 'AbortError') return;
@@ -329,7 +404,7 @@ async function saveLayout() {
   link.click();
   URL.revokeObjectURL(url);
   markDirty(false);
-  setHint('这个浏览器不支持直接写回文件，已经下载了一份带位置的新文件，覆盖原文件即可');
+  setHint(readData()?.ui?.saveFallback ?? '');
 }
 
 // ---- 事件接线 --------------------------------------------------------------
@@ -345,14 +420,26 @@ document.addEventListener('click', (event) => {
   if (event.target.closest('[data-reset-layout]')) { resetPositions(); return; }
   // 全貌 ↔ 折叠视图的入口（FR-032：MUST NOT 存在只能进不能出的层）
   if (event.target.closest('[data-goto-folded]')) { showFolded(true); return; }
+  if (event.target.closest('[data-goto-info]')) { showView('view-info'); return; }
   if (event.target.closest('[data-expand]') || event.target.closest('[data-back]')) {
     showFolded(false);
+    return;
+  }
+  if (event.target.closest('[data-clear-lit]')) { clearHighlight(); return; }
+  // 线上的信息名、两处清单里的名字，点哪个都是同一件事：高亮这份东西流经的线。
+  const infoName = event.target.closest('[data-info-id]');
+  if (infoName) {
+    const fromList = infoName.closest('#view-info');
+    highlightInfo(infoName.dataset.infoId);
+    // 从全量视图点进来的，MUST 回到画布——不然亮了也看不见。
+    if (fromList && litInfo) showView('view-overview');
     return;
   }
   const node = event.target.closest('[data-goto]');
   if (node && !node.dataset.suppressClick) {
     const detail = document.getElementById(`detail-${node.dataset.goto}`);
-    openModal(detail, node.querySelector('.topo-node-name')?.textContent || '详情');
+    openModal(detail, node.querySelector('.topo-node-name')?.textContent
+      || readData()?.ui?.detail || '');
     return;
   }
   // 点一条线 MUST 能看到它的详情（FR-026）——线本身、加宽的点击区、线上的标注都算。
@@ -360,11 +447,18 @@ document.addEventListener('click', (event) => {
   if (edge) {
     const detail = document.querySelector(`[data-edge-detail="${CSS.escape(edge.dataset.edgeId)}"]`);
     openModal(detail, edge.dataset.edgeId);
+    return;
   }
+  // 点画布空白处取消高亮。
+  if (litInfo && event.target.closest('.topo-stage')) clearHighlight();
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeModal();
+  if (event.key === 'Escape') { closeModal(); clearHighlight(); }
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.dataset?.infoId) {
+    event.preventDefault();
+    highlightInfo(event.target.dataset.infoId);
+  }
 });
 
 window.addEventListener('beforeunload', (event) => {

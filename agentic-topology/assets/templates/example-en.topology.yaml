@@ -1,0 +1,238 @@
+# A small, complete description in English — the one the English README screenshots are taken from.
+# The prose here is the *analysed project's own words*; `--lang en` never translates it.
+# Only the page's own wording (buttons, column headings, badges) follows --lang.
+schema_version: 1
+source_project: "examples/receipt-checker"
+generated_at: "2026-09-02"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "A reviewer drops a folder of receipts in and presses **Check**."
+  exits:
+    - name: "All receipts cleared"
+      kind: normal
+      condition: "every receipt got a verdict and the summary was written to disk"
+      source:
+        refs:
+          - "src/run.ts:180-206"
+        confirmed_at: "2026-09-02"
+    - name: "Stopped after repeated bad reads"
+      kind: abnormal
+      condition: "three receipts in a row could not be read at all"
+      source:
+        refs:
+          - "src/run.ts:214"
+        confirmed_at: "2026-09-02"
+
+groups:
+  - id: intake
+    name: "First pile · take them in"
+    order: 1
+  - id: review
+    name: "Second pile · look them over"
+    order: 2
+
+nodes:
+  - id: SCAN
+    name: "Read the folder"
+    kind: program
+    responsibility: "List every receipt in the folder and pull the text off each one"
+    inputs: "one folder of receipt images"
+    outputs: "one row per receipt, with whatever text came off it"
+    purpose: "gives everything downstream one shape to work with"
+    group: intake
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/scan.ts:44-96"
+      confirmed_at: "2026-09-02"
+  - id: SPLIT
+    name: "Readable or not"
+    kind: decision
+    responsibility: "Send clean reads on to the reviewer; put unreadable ones aside for a person"
+    inputs: "one row per receipt"
+    outputs: "clean rows, or a pile set aside"
+    purpose: "keeps the reviewer from spending its turn on a blurry photo"
+    group: intake
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/split.ts:12-40"
+      confirmed_at: "2026-09-02"
+  - id: REVIEWER
+    name: "Reviewer"
+    kind: agent
+    responsibility: "Decide whether each receipt matches the expense rules, and say why"
+    inputs: "a receipt's text plus the rules that apply to it"
+    outputs: "a verdict and a reason for each receipt"
+    group: review
+    concurrency:
+      default: 2
+      max: 4
+      note: "the vendor caps us at 4"
+    system_prompt:
+      inline: |
+        You check receipts against the expense rules you are given.
+        Say yes or no for each one, and give the reason in a single sentence.
+        If a rule does not cover the receipt, say so instead of guessing.
+    tools:
+      - read
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "a verdict has been written for every receipt handed over"
+      limits:
+        steps: "40 turns"
+        time: not_set
+        cost: not_set
+        consecutive_failures: "2 retries for the whole batch"
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src/reviewer.ts:60-134"
+      confirmed_at: "2026-09-02"
+  - id: SUMMARY
+    name: "Write the summary"
+    kind: program
+    responsibility: "Collect every verdict into one file the reviewer can hand on"
+    inputs: "verdicts, and the pile that was set aside"
+    outputs: "one summary file"
+    purpose: "one place to look instead of scrolling a log"
+    group: review
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/summary.ts:8-71"
+      confirmed_at: "2026-09-02"
+
+information:
+  - id: receipt-rows
+    name: "Receipt rows"
+    what: "One row per receipt, holding whatever text came off the image"
+    blocks:
+      - "the file name of the image"
+      - "the text that was read off it"
+      - "how confident the reader was"
+    form: bundle
+    produced_at: "while reading the folder"
+    origin: SCAN
+    destination: SPLIT
+    confidence: certain
+    source:
+      refs:
+        - "src/scan.ts:44-96"
+      confirmed_at: "2026-09-02"
+  - id: review-brief
+    name: "Review brief"
+    what: "What the reviewer is asked to look at for one batch of receipts"
+    blocks:
+      - "the receipts that were read cleanly"
+      - "the expense rules that apply to them"
+    form: prompt
+    produced_at: "once the unreadable ones have been set aside"
+    origin: SPLIT
+    destination: REVIEWER
+    confidence: certain
+    source:
+      refs:
+        - "src/split.ts:12-40"
+      confirmed_at: "2026-09-02"
+  - id: set-aside
+    name: "Set-aside pile"
+    what: "The receipts nobody could read, waiting for a person to look at them"
+    blocks:
+      - "the file name of each unreadable image"
+      - "what went wrong when it was read"
+    form: file
+    produced_at: "once the unreadable ones have been set aside"
+    origin: SPLIT
+    destination: SUMMARY
+    confidence: certain
+    source:
+      refs:
+        - "src/split.ts:41-58"
+      confirmed_at: "2026-09-02"
+  - id: verdicts
+    name: "Verdicts"
+    what: "One yes-or-no per receipt, each with the reason behind it"
+    blocks:
+      - "the receipt it belongs to"
+      - "yes or no"
+      - "the reason, in one sentence"
+    form: file
+    produced_at: "as the reviewer finishes each receipt"
+    origin: REVIEWER
+    destination: SUMMARY
+    confidence: certain
+    source:
+      refs:
+        - "src/reviewer.ts:135-160"
+      confirmed_at: "2026-09-02"
+
+edges:
+  - from: SCAN
+    to: SPLIT
+    category: normal
+    trigger: "every run goes through here"
+    payloads:
+      - info: receipt-rows
+        carrier: bundle
+        delivered_at: "handed straight over in the same call"
+    concurrency_control: "cannot happen (one run at a time)"
+    confidence: certain
+    source:
+      refs:
+        - "src/run.ts:88-101"
+      confirmed_at: "2026-09-02"
+  - from: SPLIT
+    to: REVIEWER
+    category: normal
+    trigger: "the receipt was read cleanly"
+    payloads:
+      - info: review-brief
+        carrier: prompt
+        delivered_at: "in the first message of the review session"
+    concurrency_control: "up to 4 batches at once, the rest queue"
+    confidence: certain
+    source:
+      refs:
+        - "src/split.ts:12-40"
+      confirmed_at: "2026-09-02"
+  - from: SPLIT
+    to: SUMMARY
+    category: reject_or_halt
+    trigger: "the receipt could not be read at all"
+    payloads:
+      - info: set-aside
+        carrier: file
+        delivered_at: "written out as soon as it is set aside"
+    concurrency_control: "appended one at a time"
+    confidence: certain
+    source:
+      refs:
+        - "src/split.ts:41-58"
+      confirmed_at: "2026-09-02"
+  - from: REVIEWER
+    to: SUMMARY
+    category: normal
+    trigger: "a verdict has been written"
+    payloads:
+      - info: verdicts
+        carrier: file
+        delivered_at: "once the whole batch is done"
+    concurrency_control: "queued (the summary is written one batch at a time)"
+    confidence: certain
+    source:
+      refs:
+        - "src/summary.ts:8-71"
+      confirmed_at: "2026-09-02"

@@ -1,5 +1,6 @@
 import { baseGroups } from './groups.mjs';
 import { measureLabel, wrapLineCount } from './measure.mjs';
+import { edgeLabel, edgeLabelParts } from './marks.mjs';
 import { foldSummary } from './interactions.mjs';
 
 const M = {
@@ -347,7 +348,8 @@ function placeLabel(geometry, size, obstacles, warnings, edge) {
 }
 
 /** 根据拓扑描述计算确定性的分组、节点、连线与标签布局。 */
-export function layout(data) {
+export function layout(data, { lang = 'zh' } = {}) {
+  const infoById = new Map((data.information || []).map((item) => [item.id, item]));
   const sourceNodes = Array.isArray(data.nodes) ? data.nodes : [];
   const sourceEdges = Array.isArray(data.edges) ? data.edges : [];
   const groups = groupDefinitions(data, sourceNodes, sourceEdges);
@@ -418,8 +420,9 @@ export function layout(data) {
     const targetGroup = [...groupById.values()].find((group) => group.col === to.col);
     const paired = edge.from !== edge.to && edgeKeys.has(`${edge.to}->${edge.from}`);
     const geometry = pathGeometry(from, to, sourceGroup, targetGroup, paired ? M.PAIR_OFFSET : 0);
-    const fullLabel = String(edge.trigger || '');
-    const label = fullLabel.length > 14 ? `${fullLabel.slice(0, 14)}…` : fullLabel;
+    // 线上写的是「这条线传的是哪几份信息」；什么情况下走这条线移进了浮层。
+    const label = edgeLabel(edge, infoById, lang);
+    const labelParts = edgeLabelParts(edge, infoById, lang);
     const size = measureLabel(label);
     const placed = placeLabel(geometry, size, obstacles, warnings, edge);
     obstacles.push(labelBox(placed.point, size));
@@ -428,6 +431,7 @@ export function layout(data) {
       to: edge.to,
       d: geometry.d,
       label,
+      labelParts,
       labelX: round(placed.point.x),
       labelY: round(placed.point.y),
       labelW: size.w,
@@ -482,14 +486,16 @@ export function layout(data) {
 }
 
 /** 计算折叠卡片与堆间连线的确定性布局。 */
-export function layoutFolded(data) {
+export function layoutFolded(data, { lang = 'zh' } = {}) {
+  const infoById = new Map((data.information || []).map((item) => [item.id, item]));
   const summary = foldSummary(data);
   const cardWidth = 232;
   const cardHeight = 132;
   const gaps = summary.cards.slice(1).map(() => M.COL_GAP);
   const cardIndex = new Map(summary.cards.map((card, index) => [card.id, index]));
   const edgeLabels = summary.interGroupEdges.map((edge) => {
-    const label = `带 ${edge.payloadCount} 样东西`;
+    // 跟全貌图同一套说法：至多 3 份，超出收成「等 N 份」。
+    const label = edgeLabel(edge, infoById, lang);
     return { edge, label, size: measureLabel(label) };
   });
   for (const item of edgeLabels) {

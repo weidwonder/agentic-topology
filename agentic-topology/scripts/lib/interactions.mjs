@@ -28,6 +28,20 @@ function chainNodes(nodes, edges) {
   return ordered.map((id) => names.get(id)).join(' → ');
 }
 
+/** 合并后的引用列表：按信息编号去重、保留第一次出现的次序与交法。 */
+function dedupeRefs(edges) {
+  const seen = new Set();
+  const refs = [];
+  for (const edge of edges) {
+    for (const ref of edge.payloads || []) {
+      if (!ref?.info || seen.has(ref.info)) continue;
+      seen.add(ref.info);
+      refs.push(ref);
+    }
+  }
+  return refs;
+}
+
 function majorityCategory(edges) {
   const counts = new Map();
   for (const edge of edges) counts.set(edge.category, (counts.get(edge.category) || 0) + 1);
@@ -103,7 +117,9 @@ export function foldSummary(data) {
       from,
       to,
       sourceEdgeKeys: source.map((edge) => `${edge.from}->${edge.to}`),
-      payloadCount: source.reduce((sum, edge) => sum + (edge.payloads || []).length, 0),
+      // 几条线并成一条之后，同一份信息可能被数到好几次——按编号去重，
+      // 折叠视图上写「等 5 份」而实际只有 3 份不同的东西，是在骗人。
+      payloads: dedupeRefs(source),
       category: majorityCategory(source),
       confidence: conservativeConfidence(source),
     };

@@ -297,18 +297,274 @@ nodes:
         - "src-tauri/src/commands.rs:479-490"
       confirmed_at: "2026-08-27"
 
+information:
+  - id: info-01
+    name: "RuntimeMessage::Path { path, force: false }"
+    what: "RuntimeMessage::Path { path, force: false }"
+    blocks:
+      - "RuntimeMessage::Path { path, force: false }"
+    form: event
+    produced_at: "runtime watcher 回调或 scan_all 枚举文件时"
+    origin: monitor_scan
+    destination: task_scheduler
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-02
+    name: "RuntimeMessage::Reconcile"
+    what: "RuntimeMessage::Reconcile"
+    blocks:
+      - "RuntimeMessage::Reconcile"
+    form: event
+    produced_at: "删除或重命名事件进入 watcher 回调时"
+    origin: monitor_scan
+    destination: task_scheduler
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-03
+    name: "源文件路径"
+    what: "源文件路径、相对路径、文件大小和修改时间"
+    blocks:
+      - "源文件路径"
+      - "相对路径"
+      - "文件大小"
+      - "修改时间"
+    form: bundle
+    produced_at: "schedule_path 校验并读取 metadata 时"
+    origin: task_scheduler
+    destination: engine_choice
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-04
+    name: "本地转换任务"
+    what: "本地转换任务与源文件"
+    blocks:
+      - "本地转换任务"
+      - "源文件"
+    form: bundle
+    produced_at: "process_path 选择 Anytomd 分支时"
+    origin: engine_choice
+    destination: local_converter
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-05
+    name: "MinerU 任务"
+    what: "MinerU 任务、源文件和 profile"
+    blocks:
+      - "MinerU 任务"
+      - "源文件"
+      - "profile"
+    form: bundle
+    produced_at: "process_path 选择 Mineru 分支时"
+    origin: engine_choice
+    destination: mineru_converter
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-06
+    name: "ConversionArtifact（markdown、images、warnings）"
+    what: "ConversionArtifact（markdown、images、warnings）"
+    blocks:
+      - "ConversionArtifact（markdown"
+      - "images"
+      - "warnings）"
+    form: bundle
+    produced_at: "convert_locally 完成时"
+    origin: local_converter
+    destination: artifact_writer
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-07
+    name: "MinerU 下载并解压得到的 ConversionArtifact"
+    what: "MinerU 下载并解压得到的 ConversionArtifact"
+    blocks:
+      - "MinerU 下载并解压得到的 ConversionArtifact"
+    form: bundle
+    produced_at: "MinerU download 完成时"
+    origin: mineru_converter
+    destination: artifact_writer
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-08
+    name: "TagRuntimeMessage::Path { path: output, force: true }"
+    what: "TagRuntimeMessage::Path { path: output, force: true }"
+    blocks:
+      - "TagRuntimeMessage::Path { path: output, force: true }"
+    form: event
+    produced_at: "process_path 成功写入输出后"
+    origin: artifact_writer
+    destination: tag_queue
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-09
+    name: "Markdown 初始 4 KiB 片段与继续读取指令"
+    what: "Markdown 初始 4 KiB 片段与继续读取指令"
+    blocks:
+      - "Markdown 初始 4 KiB 片段"
+      - "继续读取指令"
+    form: prompt
+    produced_at: "run_agent_once 预读 read_chunk_with_limit 时"
+    origin: tag_queue
+    destination: classifier_agent
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-10
+    name: "候选类别"
+    what: "候选类别、选择模式和两个动态工具"
+    blocks:
+      - "候选类别"
+      - "选择模式"
+      - "两个动态工具"
+    form: prompt
+    produced_at: "run_agent_once 构建 preamble 与 dynamic_tools 时"
+    origin: tag_queue
+    destination: classifier_agent
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-11
+    name: "复用原路径的 TagRuntimeMessage::Path { force: true }"
+    what: "复用原路径的 TagRuntimeMessage::Path { force: true }"
+    blocks:
+      - "复用原路径的 TagRuntimeMessage::Path { force: true }"
+    form: prompt
+    produced_at: "tag_runtime 发现 active.paths 已存在并记录 force_after 时"
+    origin: tag_queue
+    destination: classifier_agent
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-12
+    name: "分类类别"
+    what: "分类类别、最终内容哈希、读取字节数、模型调用和 token 用量"
+    blocks:
+      - "分类类别"
+      - "最终内容哈希"
+      - "读取字节数"
+      - "模型调用"
+      - "token 用量"
+    form: bundle
+    produced_at: "update_document_categories 写入成功并设置 session.wrote 时"
+    origin: classifier_agent
+    destination: tag_queue
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-13
+    name: "TagRuntimeMessage::Reload / Start / ApplyRules"
+    what: "TagRuntimeMessage::Reload / Start / ApplyRules"
+    blocks:
+      - "TagRuntimeMessage::Reload / Start / ApplyRules"
+    form: event
+    produced_at: "对应 Tauri command 保存设置后"
+    origin: settings_commands
+    destination: tag_queue
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-14
+    name: "TagRuntimeMessage::Retry / RetryMany"
+    what: "TagRuntimeMessage::Retry / RetryMany"
+    blocks:
+      - "TagRuntimeMessage::Retry / RetryMany"
+    form: event
+    produced_at: "用户点击单个或批量重试后"
+    origin: settings_commands
+    destination: tag_queue
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-15
+    name: "独立的 cpah_tool_calling_probe 工具、固定 value=ok 的提示词和测试消息"
+    what: "独立的 cpah_tool_calling_probe 工具、固定 value=ok 的提示词和测试消息"
+    blocks:
+      - "独立的 cpah_tool_calling_probe 工具"
+      - "固定 value=ok 的提示词"
+      - "测试消息"
+    form: prompt
+    produced_at: "test_tool_calling 装配 Agent 时"
+    origin: settings_commands
+    destination: tool_calling_probe
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-16
+    name: "IndexRuntimeMessage::Path(output_path)"
+    what: "IndexRuntimeMessage::Path(output_path)"
+    blocks:
+      - "IndexRuntimeMessage::Path(output_path)"
+    form: event
+    produced_at: "index_runtime watcher 收到输出目录事件时"
+    origin: artifact_writer
+    destination: index_builder
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+  - id: info-17
+    name: "分类后的 Markdown 文件变更事件"
+    what: "分类后的 Markdown 文件变更事件"
+    blocks:
+      - "分类后的 Markdown 文件变更事件"
+    form: event
+    produced_at: "write_cpah_categories_checked 完成 atomic_replace 时"
+    origin: classifier_agent
+    destination: index_builder
+    confidence: certain
+    source:
+      refs:
+        - "src-tauri/src/runtime.rs:598-615"
+      confirmed_at: "2026-08-27"
+
 edges:
   - from: monitor_scan
     to: task_scheduler
     category: normal
     trigger: "目录扫描或 watcher 收到源文件事件"
-    carrier: event
     payloads:
-      - content: "RuntimeMessage::Path { path, force: false }"
-        produced_at: "runtime watcher 回调或 scan_all 枚举文件时"
+      - info: info-01
+        carrier: event
         delivered_at: "runtime 主循环收到消息并调用 handle_path 时"
-      - content: "RuntimeMessage::Reconcile"
-        produced_at: "删除或重命名事件进入 watcher 回调时"
+      - info: info-02
+        carrier: event
         delivered_at: "runtime 主循环处理 Reconcile 分支时"
     concurrency_control: "同一路径由 ActivePaths 合并 pending 请求并按优先级保留"
     confidence: certain
@@ -322,10 +578,9 @@ edges:
     to: engine_choice
     category: normal
     trigger: "路径通过文件类型、扩展名、监控目录和去重检查并写入 queued task"
-    carrier: bundle
     payloads:
-      - content: "源文件路径、相对路径、文件大小和修改时间"
-        produced_at: "schedule_path 校验并读取 metadata 时"
+      - info: info-03
+        carrier: bundle
         delivered_at: "queue_task 返回任务并进入 process_path 时"
     concurrency_control: "同一路径只允许一个 running，重复请求放入 pending"
     confidence: certain
@@ -338,10 +593,9 @@ edges:
     to: local_converter
     category: pass_or_skip
     trigger: "default_engine 返回 ConversionEngine::Anytomd"
-    carrier: bundle
     payloads:
-      - content: "本地转换任务与源文件"
-        produced_at: "process_path 选择 Anytomd 分支时"
+      - info: info-04
+        carrier: bundle
         delivered_at: "调用 convert_locally 时"
     concurrency_control: "由 runtime Semaphore(2) 排队"
     confidence: certain
@@ -355,10 +609,9 @@ edges:
     to: mineru_converter
     category: pass_or_skip
     trigger: "default_engine 返回 ConversionEngine::Mineru"
-    carrier: bundle
     payloads:
-      - content: "MinerU 任务、源文件和 profile"
-        produced_at: "process_path 选择 Mineru 分支时"
+      - info: info-05
+        carrier: bundle
         delivered_at: "调用 run_mineru 时"
     concurrency_control: "由 runtime Semaphore(2) 排队"
     confidence: certain
@@ -372,10 +625,9 @@ edges:
     to: artifact_writer
     category: normal
     trigger: "anytomd 转换返回非空 ConversionArtifact"
-    carrier: bundle
     payloads:
-      - content: "ConversionArtifact（markdown、images、warnings）"
-        produced_at: "convert_locally 完成时"
+      - info: info-06
+        carrier: bundle
         delivered_at: "write_artifact 调用时"
     concurrency_control: "不会发生（单个任务顺序执行）"
     confidence: certain
@@ -389,10 +641,9 @@ edges:
     to: artifact_writer
     category: normal
     trigger: "MinerU poll 返回 done 且 download 成功"
-    carrier: bundle
     payloads:
-      - content: "MinerU 下载并解压得到的 ConversionArtifact"
-        produced_at: "MinerU download 完成时"
+      - info: info-07
+        carrier: bundle
         delivered_at: "run_mineru 调用 write_artifact 时"
     concurrency_control: "不会发生（单个任务顺序执行）"
     confidence: certain
@@ -406,10 +657,9 @@ edges:
     to: tag_queue
     category: pass_or_skip
     trigger: "转换成功且 profile.tagging.enabled 且候选类别非空"
-    carrier: event
     payloads:
-      - content: "TagRuntimeMessage::Path { path: output, force: true }"
-        produced_at: "process_path 成功写入输出后"
+      - info: info-08
+        carrier: event
         delivered_at: "tag_runtime 主循环处理 Path 消息时"
     concurrency_control: "tag_runtime active.paths 去重，同路径 force 请求记录在 force_after"
     confidence: certain
@@ -423,16 +673,15 @@ edges:
     to: classifier_agent
     category: normal
     trigger: "分类未暂停、Agent 已配置、规则哈希匹配且 queued 任务可用；或同一路径 force 请求在前一任务完成后重新入队"
-    carrier: prompt
     payloads:
-      - content: "Markdown 初始 4 KiB 片段与继续读取指令"
-        produced_at: "run_agent_once 预读 read_chunk_with_limit 时"
+      - info: info-09
+        carrier: prompt
         delivered_at: "agent.runner(prompt).run 首轮消息时"
-      - content: "候选类别、选择模式和两个动态工具"
-        produced_at: "run_agent_once 构建 preamble 与 dynamic_tools 时"
+      - info: info-10
+        carrier: prompt
         delivered_at: "模型会话 build 完成并开始运行时"
-      - content: "复用原路径的 TagRuntimeMessage::Path { force: true }"
-        produced_at: "tag_runtime 发现 active.paths 已存在并记录 force_after 时"
+      - info: info-11
+        carrier: prompt
         delivered_at: "当前 Agent 任务完成后重新入队时"
     concurrency_control: "按 settings.agent.concurrency 取 1 到 4 个并行任务"
     confidence: certain
@@ -446,10 +695,9 @@ edges:
     to: tag_queue
     category: normal
     trigger: "Agent 写入 cpah_categories 后 run_tag_agent 返回 TagRunResult"
-    carrier: bundle
     payloads:
-      - content: "分类类别、最终内容哈希、读取字节数、模型调用和 token 用量"
-        produced_at: "update_document_categories 写入成功并设置 session.wrote 时"
+      - info: info-12
+        carrier: bundle
         delivered_at: "tag_runtime complete_tag_job 调用时"
     concurrency_control: "单个任务完成后移除 active.paths，再发送 Pump 或 force Path"
     confidence: certain
@@ -463,13 +711,12 @@ edges:
     to: tag_queue
     category: normal
     trigger: "用户保存分类设置、暂停切换、应用规则或请求手动重试"
-    carrier: event
     payloads:
-      - content: "TagRuntimeMessage::Reload / Start / ApplyRules"
-        produced_at: "对应 Tauri command 保存设置后"
+      - info: info-13
+        carrier: event
         delivered_at: "tag_runtime receiver 收到消息时"
-      - content: "TagRuntimeMessage::Retry / RetryMany"
-        produced_at: "用户点击单个或批量重试后"
+      - info: info-14
+        carrier: event
         delivered_at: "tag_runtime retry_jobs 调用时"
     concurrency_control: "无界 mpsc 队列按接收顺序处理"
     confidence: certain
@@ -485,10 +732,9 @@ edges:
     to: tool_calling_probe
     category: normal
     trigger: "用户调用 test_agent_connection"
-    carrier: prompt
     payloads:
-      - content: "独立的 cpah_tool_calling_probe 工具、固定 value=ok 的提示词和测试消息"
-        produced_at: "test_tool_calling 装配 Agent 时"
+      - info: info-15
+        carrier: prompt
         delivered_at: "agent.runner(执行工具调用测试。) 运行时"
     concurrency_control: "不会发生（连接测试 command 内单次调用）"
     confidence: certain
@@ -502,10 +748,9 @@ edges:
     to: index_builder
     category: normal
     trigger: "输出目录中的 Markdown 或附件变化被索引 watcher 观察到"
-    carrier: event
     payloads:
-      - content: "IndexRuntimeMessage::Path(output_path)"
-        produced_at: "index_runtime watcher 收到输出目录事件时"
+      - info: info-16
+        carrier: event
         delivered_at: "去抖达到 1 秒并调用 rebuild_one 时"
     concurrency_control: "同一 profile 以 dirty 时间戳去抖，达到 DEBOUNCE 后合并重建"
     confidence: certain
@@ -519,10 +764,9 @@ edges:
     to: index_builder
     category: normal
     trigger: "分类 Agent 原子替换 Markdown 后被输出目录 watcher 观察到"
-    carrier: event
     payloads:
-      - content: "分类后的 Markdown 文件变更事件"
-        produced_at: "write_cpah_categories_checked 完成 atomic_replace 时"
+      - info: info-17
+        carrier: event
         delivered_at: "index_runtime 去抖后重建对应 profile 索引时"
     concurrency_control: "同一 profile 的事件在 dirty 表中按 1 秒窗口合并"
     confidence: inferred
