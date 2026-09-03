@@ -95,3 +95,31 @@ test('信息块级条目的来源取那份信息自己的', async () => {
   assert.deepEqual(hit.source.refs, ['src/material-inventory.ts:102-137']);
   assert.equal(hit.source.confirmed_at, '2026-08-26');
 });
+
+// ---- design 的两个组合分支（评审门查出来的，之前完全没测到）--------------------
+
+const D = () => enrich(data(FX('info-design.topology.yaml')), { baseDir: 'tests/fixtures' });
+
+test('两份都在设计稿上时，「可能是同一份」不出条目', async () => {
+  const { checklist } = await D();
+  assert.equal(checklist.some((c) => c.field === 'same_as'), false,
+    '拿一份还没造出来的东西去比对，比不出结果——不该派这个活');
+});
+
+test('设计稿上的信息，起终点对不上也不出条目', async () => {
+  const { checklist } = await D();
+  assert.equal(checklist.some((c) => c.field === 'origin'), false);
+});
+
+test('但 certain 的自相矛盾照样要报——挡的只有 design 这一档', async () => {
+  const { checklist } = await I();
+  const ends = checklist.find((c) => c.field === 'origin');
+  assert.ok(ends, '标了查实却自相矛盾，恰恰最该让人去看一眼');
+  assert.equal(checklist.some((c) => c.field === 'same_as'), true);
+});
+
+test('design 的信息一条清单条目都不产生', async () => {
+  const { checklist } = await D();
+  assert.equal(checklist.some((c) => c.level === 'information'), false,
+    `设计稿上的东西不该进核对清单：${JSON.stringify(checklist, null, 2)}`);
+});

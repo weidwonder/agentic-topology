@@ -53,8 +53,19 @@ function itemText(level, ref, field, say) {
   return say.field(ref, field);
 }
 
+/**
+ * design 是「这块还在设计稿上，本来就没落地」，不是「你去核实一下」——MUST NOT 进核对清单。
+ * 核实的对象是源码；设计稿没有源码可对，让人去核实一份还不存在的东西是在派假活。
+ *
+ * 注意这跟 addChecklist 的门槛**不是**同一条：那里只收 inferred / unread，
+ * 而下面两类条目（同一份怀疑、起终点对不上）对 certain 也要出——
+ * 「标了查实却自相矛盾」恰恰是最该让人去看一眼的。所以这里只挡 design 一档。
+ */
+function onPaper(confidence) {
+  return confidence === 'design';
+}
+
 function addChecklist(list, level, ref, field, confidence, source, fallbackDate, say) {
-  // design 是「这块还在设计稿上，本来就没落地」，不是「你去核实一下」——MUST NOT 进核对清单。
   if (confidence !== 'inferred' && confidence !== 'unread') return;
   list.push({
     level,
@@ -159,7 +170,9 @@ export async function enrich(data, { baseDir = '.', lang = 'zh' } = {}) {
     if (item?.same_as) {
       const other = information.find((x) => x?.id === item.same_as);
       const pair = [item.id, item.same_as].sort().join('\u0000');
-      if (other && !samePairs.has(pair)) {
+      // 两头任一还在设计稿上就不出条目：拿一份还没造出来的东西去比对，比不出结果。
+      const stillOnPaper = onPaper(item.confidence) || onPaper(other?.confidence);
+      if (other && !stillOnPaper && !samePairs.has(pair)) {
         samePairs.add(pair);
         checklist.push({
           level: 'information',
@@ -174,7 +187,8 @@ export async function enrich(data, { baseDir = '.', lang = 'zh' } = {}) {
     // 信息块上写的起终点，与从连线算出来的对不上：图上按连线算的画，
     // 这里只把不一致点出来交给人核实。
     const ends = flowEnds.get(item?.id);
-    if (ends && nodeIds.has(item?.origin) && nodeIds.has(item?.destination)
+    if (ends && !onPaper(item?.confidence) && nodeIds.has(item?.origin)
+      && nodeIds.has(item?.destination)
       && (ends.from !== item.origin || ends.to !== item.destination)) {
       checklist.push({
         level: 'information',
