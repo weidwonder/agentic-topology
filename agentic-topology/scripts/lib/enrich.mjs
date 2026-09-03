@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const LEVEL_ORDER = { node: 0, edge: 1, field: 2 };
+// 信息块排在连线之后、字段之前：先看方块，再看线，再看线上传的东西，
+// 最后才是某个字段。改这四个数会改变产物字节，逐字节相同的断言会红。
+const LEVEL_ORDER = { node: 0, edge: 1, information: 2, field: 3 };
 
 function sourceOf(item, fallbackDate) {
   const source = item?.source || {};
@@ -16,6 +18,7 @@ function sourceOf(item, fallbackDate) {
 function itemText(level, ref, field) {
   if (level === 'node') return `方块 ${ref} 需要你核实`;
   if (level === 'edge') return `连线 ${ref} 需要你核实`;
+  if (level === 'information') return `信息「${ref}」需要你核实`;
   if (field === 'system_prompt') return `${ref} 的提示词需要你核实`;
   return `${ref} 的 ${field} 需要你核实`;
 }
@@ -103,6 +106,55 @@ export async function enrich(data, { baseDir = '.' } = {}) {
     addChecklist(checklist, 'edge', ref, null, edge.confidence, edge, fallbackDate);
     for (const [field, confidence] of Object.entries(edge.field_confidence || {}))
       addChecklist(checklist, 'field', ref, field, confidence, edge, fallbackDate);
+  }
+  const information = Array.isArray(data.information) ? data.information : [];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  // 从连线算出来的「从哪来 / 到哪去」：一份信息可能被好几条线传，
+  // 起点取第一条传它的线的上游，终点取最后一条的下游。
+  const flowEnds = new Map();
+  for (const edge of edges) {
+    for (const payload of edge.payloads || []) {
+      if (!payload?.info) continue;
+      const ends = flowEnds.get(payload.info) || { from: edge.from, to: edge.to };
+      ends.to = edge.to;
+      flowEnds.set(payload.info, ends);
+    }
+  }
+  const samePairs = new Set();
+  for (const item of information) {
+    const name = item?.name || item?.id;
+    addChecklist(checklist, 'information', name, null, item?.confidence, item, fallbackDate);
+    // 「可能与哪份是同一份」：互指的两份只出一条，MUST NOT 两头各报一次。
+    if (item?.same_as) {
+      const other = information.find((x) => x?.id === item.same_as);
+      const pair = [item.id, item.same_as].sort().join('\u0000');
+      if (other && !samePairs.has(pair)) {
+        samePairs.add(pair);
+        checklist.push({
+          level: 'information',
+          ref: name,
+          field: 'same_as',
+          confidence: item.confidence === 'unread' ? 'unread' : 'inferred',
+          text: `「${name}」与「${other.name || other.id}」可能是同一份，需要你核实`,
+          source: sourceOf(item, fallbackDate),
+        });
+      }
+    }
+    // 信息块上写的起终点，与从连线算出来的对不上：图上按连线算的画，
+    // 这里只把不一致点出来交给人核实。
+    const ends = flowEnds.get(item?.id);
+    if (ends && nodeIds.has(item?.origin) && nodeIds.has(item?.destination)
+      && (ends.from !== item.origin || ends.to !== item.destination)) {
+      checklist.push({
+        level: 'information',
+        ref: name,
+        field: 'origin',
+        confidence: 'inferred',
+        text: `「${name}」写的是从 ${item.origin} 到 ${item.destination}，`
+          + `但线上看是从 ${ends.from} 到 ${ends.to}，需要你核实`,
+        source: sourceOf(item, fallbackDate),
+      });
+    }
   }
   sortChecklist(checklist);
   return {
