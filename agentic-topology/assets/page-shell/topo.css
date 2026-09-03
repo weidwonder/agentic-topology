@@ -86,7 +86,6 @@
 .topo-acc-mark { margin-left: auto; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
 .topo-acc-item[open] > .topo-acc-head { background: var(--muted); }
 .topo-acc-body { padding: 4px 14px 14px; }
-.topo-checklist-scroll { max-height: 320px; overflow-y: auto; }
 
 /* 详情弹层：点方块或连线弹出来，点浮层外 / 关闭按钮 / Esc 都能关。 */
 .topo-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
