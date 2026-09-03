@@ -147,3 +147,5 @@ text.topo-lit { fill: var(--primary); stroke-width: 3.5px; }
   border: 1px solid color-mix(in oklab, var(--primary) 30%, var(--border)); border-radius: var(--radius);
   background: color-mix(in oklab, var(--primary) 6%, var(--card)); font-size: 12px; }
 .topo-infobar[data-lit] { display: flex; }
+/* 清单标题后面跟着的计数徽章要有间距——「这张图里流转的信息4 份」是贴在一起的。 */
+.topo-pill-head .topo-acc-mark { margin-left: 8px; }

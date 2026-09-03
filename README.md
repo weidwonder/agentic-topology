@@ -8,22 +8,28 @@ Point it at a repo and say "draw this project's orchestration." It reads the sou
 **which AIs exist, what tools each one has, what the deterministic code between them does, who calls
 whom, and what gets handed over** — then renders **a single HTML file that opens offline**.
 
-![Orchestration overview](./assets/images/overview.png)
+![Orchestration overview](./assets/images/en/overview.png)
 
-That screenshot is real output — read from an internal-audit module (1,500 lines of TypeScript):
-10 boxes, 14 connections. Fill color says only who is doing the work: blue for AI, orange for
-program, purple for branch point. The ⚠ badge in the corner of the two AI boxes means "there are
-things here you still need to verify yourself"; the top bar totals them as *4 things to verify*.
-**It tells you what it found, not what it thinks of it.**
+That is the bundled sample rendered with `--lang en`. Fill color says only who is doing the work:
+blue for AI, orange for program, purple for branch point. Every line says **which pieces of
+information it carries** — the icon is how each one is handed over, and clicking a name lights up
+every line carrying that same piece. Under the canvas, *what moves around in this picture* lists
+them all. **It tells you what it found, not what it thinks of it.**
+
+> The prose on the diagram — box names, what each one does, what each piece of information is —
+> is the analysed project's own words, and `--lang en` never translates it. So these screenshots
+> come from an English sample. For a diagram read from a **real** 1,500-line internal-audit module
+> (10 boxes, 14 connections, 4 things flagged to verify), see the
+> [Chinese README](./README.zh-CN.md).
 
 Click any box and its full detail opens in a panel — **every box and every connection carries a
 `file:line` citation**:
 
-![Node detail](./assets/images/detail.png)
+![Node detail](./assets/images/en/detail.png)
 
 Too many boxes? Collapse them by group. Nothing is dropped when you do:
 
-![Folded view](./assets/images/folded.png)
+![Folded view](./assets/images/en/folded.png)
 
 ---
 
@@ -96,10 +102,13 @@ On the normal path you need neither.
 | **Each AI's system prompt** | Which file, which lines — click to expand that exact range |
 | **Tools / MCP / Skills** | What each AI has. "None" is written as `[]`; "couldn't determine" gets a ⚠ badge instead, so the two never blur together |
 | **When it stops** | Steps, time, cost, consecutive failures — all four, and "not set" is stated explicitly |
-| **Who calls whom, carrying what** | Every connection carries its trigger, carrier, concurrency control, and for each payload *when it's produced* and *when it's handed over* |
+| **Who calls whom, carrying what** | Every connection carries its trigger, concurrency control, and the pieces of information it hands over — each reference saying *how* it is handed over and *when* |
+| **What moves around, as a thing in its own right** | Each piece of information is written **once** and referenced by every line that carries it, so "these three lines all carry the same thing" is visible instead of guessed. The line shows its name plus a one-character icon for how it's handed over (at most three, then *+N total*); click a name and every line carrying it lights up while the rest fade. A list under the canvas — and a full seven-column view — gives what it is, roughly what's inside, what form it takes, where it comes from and ends up, and where that was found |
+| **"These two might be the same thing"** | When the reading can't establish that two pieces are the same, they stay **separate**, both marked *a guess*, with one pointing at the other — and that pair lands in the verify-this list by name. It never quietly merges them to make the chain look tidy |
 | **Where it starts and where it ends** | Bracketing the canvas: the entry path sits above the diagram, and the normal, abnormal, and cancelled exits below it |
 | **How sure it is** | Four levels: landed (verified) / inferred (a guess) / missing (couldn't determine) / by design. All four carry a badge; the last three also get a dashed border. You can filter on it |
-| **Verify-this list** | A ⚠ badge in the corner of the box it belongs to, or a tooltip on the connection; the top bar carries only the total — click the thing you want to check, no separate table to hunt through |
+| **Verify-this list** | A ⚠ badge in the corner of the box it belongs to, a tooltip on the connection, or a badge next to the piece of information in the list; the top bar carries only the total — click the thing you want to check, no separate table to hunt through |
+| **Chinese or English** | `--lang zh` (the default) or `--lang en` switches the page's own wording. The description's prose is never translated |
 | **Laid out the way you want** | Boxes and groups drag, connections re-route live; "save the positions into this file" writes them back into the same HTML so it opens that way next time (browsers without the File System Access API download a new copy for you to overwrite instead), and one click restores the automatic layout |
 
 Every prose field (boxes, detail, entry, exits, stop conditions, payloads) goes through Markdown, so
@@ -141,9 +150,12 @@ anything**, so you can confirm yourself. A slip like `--dir .` cannot wipe your 
 
 ```bash
 npx agentic-topology install  [--agent claude|codex] [--dir <dir>]
-npx agentic-topology render   <description-file> [-o <output.html>] [--force]
+npx agentic-topology render   <description-file> [-o <output.html>] [--force] [--lang zh|en]
 npx agentic-topology validate <description-file> [--format json]
 ```
+
+`--lang` defaults to `zh`. An unknown value is an error listing what is accepted — it never
+quietly falls back, which would hand you a Chinese page while you believed `--lang en` had worked.
 
 Exit codes: `0` ok · `2` validation failed · `3` syntax error or file unreadable · `1` internal error
 
@@ -179,7 +191,10 @@ agentic-topology/        the skill and CLI — this directory is what the npm pa
   bin/                     npx entry point and installer
   tests/                   test suite, node:test, zero dependencies (`npm test`)
 
-assets/images/           the screenshots above; they serve the README only and are not installed
+assets/images/           screenshots for the Chinese README (Chinese UI)
+assets/images/en/        screenshots for this README (English UI)
+                         both serve the READMEs only and are not installed
+tools/shoot.mjs          re-shoots all six, both languages, in one run
 ```
 
 ---
@@ -189,7 +204,7 @@ assets/images/           the screenshots above; they serve the README only and a
 **Works**: rendering from a filled-in description, validation with per-field errors, group folding,
 filtering by confidence and type, box and connection drill-down in a panel, prompt ranges expanded inline,
 verify badges, drag-to-arrange with positions saved back into the file, non-clobbering regeneration,
-staleness notices.
+staleness notices, information as a first-class thing with click-to-highlight, Chinese and English UI.
 
 **Missing**: the ship line requires **zero missed agent nodes and zero missed call edges across 3
 real projects**. It is **not met**. Three things are outstanding:

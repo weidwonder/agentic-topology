@@ -88,7 +88,7 @@ const WORDS_ZH = {
     confirmedAt: (date) => `查证时间 ${date}`,
     lineRange: (from, to) => `第 ${from}–${to} 行`,
     unreadableRange: (from, to, reason) => `读不到这个文件的第 ${from}–${to} 行：${reason}`,
-    abilityCount: (tools, mcp) => `工具 ${tools} · MCP ${mcp}`,
+    abilityCount: (tools, mcp, skills) => `工具 ${tools} · MCP ${mcp} · Skill ${skills}`,
     stale: (reason) => `这张图可能已经过期：${reason}`,
     foldCard: (nodes, inner) => `${nodes} 个方块 · 里面 ${inner} 条线`,
     foldKinds: (agents, programs, decisions) => [
@@ -179,7 +179,8 @@ const WORDS_EN = {
     confirmedAt: (date) => `checked on ${date}`,
     lineRange: (from, to) => `lines ${from}–${to}`,
     unreadableRange: (from, to, reason) => `cannot read lines ${from}–${to} of this file: ${reason}`,
-    abilityCount: (tools, mcp) => `${tools} tools · ${mcp} MCP`,
+    abilityCount: (tools, mcp, skills) =>
+      `${tools} tool${tools === 1 ? '' : 's'} · ${mcp} MCP · ${skills} skill${skills === 1 ? '' : 's'}`,
     stale: (reason) => `this picture may be out of date: ${reason}`,
     foldCard: (nodes, inner) => `${nodes} block${nodes === 1 ? '' : 's'} · `
       + `${inner} line${inner === 1 ? '' : 's'} inside`,
@@ -437,8 +438,7 @@ function abilities(node) {
     `<div class="row">${list(items)}</div>`;
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.abilities)}` +
     `<span class="topo-acc-mark">${esc(WORDS.phrases.abilityCount(node.tools?.length || 0,
-      node.mcp?.length || 0))}` +
-    ` · Skill ${node.skills?.length || 0}</span></summary>` +
+      node.mcp?.length || 0, node.skills?.length || 0))}</span></summary>` +
     `<div class="topo-acc-body"><div class="stack-sm">${section(WORDS.labels.tools, node.tools)}` +
     `<div class="separator"></div>` +
     `${section(WORDS.labels.mcp, node.mcp)}<div class="separator"></div>` +
