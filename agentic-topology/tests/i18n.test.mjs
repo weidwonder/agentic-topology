@@ -112,3 +112,22 @@ test('界面用语表四列齐、四条硬规矩、两份禁用词清单', () =>
     assert.ok(cells[3].trim().length > 0, `英文列空着：${line}`);
   }
 });
+
+test('WORDS 是模块级可变量，它的安全前提 MUST 被钉住：renderHtml 全程同步', async () => {
+  // 文案表按语言切换靠的是「一次进程只出一张图」——renderHtml 开头写一次 WORDS，
+  // 中途不让出执行权，所以两种语言不可能交错。这条前提一旦被破坏（有人给它加了
+  // await、或包了个异步 API），语言就会串，而串出来的图看着完全正常、没人会发现。
+  // 所以把前提本身钉成断言：它红了，说明该回去把 lang 参数化，而不是改这个测试。
+  const source = readFileSync('scripts/lib/render-html.mjs', 'utf8');
+  const start = source.indexOf('export function renderHtml(');
+  assert.ok(start > 0, '找不到 renderHtml');
+  assert.equal(source.slice(0, start).includes('async function renderHtml'), false);
+  assert.match(source.slice(start, start + 60), /^export function renderHtml\(/,
+    'renderHtml MUST NOT 是 async');
+  const body = source.slice(start);
+  assert.equal(/\bawait\b/.test(body.slice(0, body.indexOf('\n}\n') + 3)), false,
+    'renderHtml 体内出现了 await——WORDS 会在两次渲染之间被改掉，语言会串');
+  // 顺带确认：同一进程里连着出两种语言，各出各的
+  const { renderHtml, LANGS } = await import('../scripts/lib/render-html.mjs');
+  assert.deepEqual(Object.keys(LANGS), ['zh', 'en']);
+});
