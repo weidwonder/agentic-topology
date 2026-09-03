@@ -142,3 +142,54 @@ test('输出后缀与落点两条硬约束，SKILL.md MUST 写明', () => {
   assert.match(text, /第 4 步/, '流程没有「出图并交付」这一步');
   assert.match(text, /Node ≥ 18/, '没写运行环境要求');
 });
+
+// ---- 抽取侧的归并判据与它的回归样本 ------------------------------------------
+// 这一段只断言"判据和样本都在、且没被悄悄削掉"。判得准不准是语义问题，
+// 没有确定性可断言的部分，那部分由 tests/fixtures/extraction-regression/ 人工跑。
+
+test('抽取纪律写清了三条证据判据，以及拿不准时的兜底', () => {
+  const doc = readFileSync('references/抽取纪律.md', 'utf8');
+  assert.match(doc, /## 6ter\./, '缺归并判据这一节');
+  assert.match(doc, /未经改写/, '缺证据①');
+  assert.match(doc, /同一段代码/, '缺证据②');
+  assert.match(doc, /只做透传/, '缺证据③');
+  assert.match(doc, /MUST NOT 只因为名字或文字相同就归并/, '缺"不许按名字归并"');
+  assert.match(doc, /same_as/, '缺拿不准时的兜底');
+  assert.match(doc, /全部被归并处/, '缺"归并了要把 refs 列全"');
+});
+
+test('分批与续跑都交代了信息清单怎么合并、怎么去重', () => {
+  const doc = readFileSync('references/抽取纪律.md', 'utf8');
+  assert.match(doc, /只读 `id` \/ `name` \/ `what` 三项/, '分批回读没限定只读三项');
+  assert.match(doc, /已存在的 `id` MUST NOT 重复追加/, '分批没写去重');
+  assert.match(doc, /信息清单 MUST 按 `id` 去重/, '续跑没写去重');
+});
+
+test('禁止清单把两条新的 MUST NOT 收进去了', () => {
+  const doc = readFileSync('references/抽取纪律.md', 'utf8');
+  const forbidden = doc.slice(doc.indexOf('## 3. 允许与禁止'), doc.indexOf('## 4.'));
+  assert.match(forbidden, /只凭名字或文字相同/);
+  assert.match(forbidden, /为了让链路看起来顺/);
+});
+
+test('抽取回归样本齐备：目标项目、人工标注的期望清单、跑过一次的记录', () => {
+  const base = 'tests/fixtures/extraction-regression';
+  for (const file of ['expected.md', 'last-run.md', 'project/src/intake.ts',
+    'project/src/router.ts', 'project/src/worker.ts', 'project/src/notify.ts'])
+    assert.ok(existsSync(`${base}/${file}`), `回归样本缺 ${file}`);
+  const expected = readFileSync(`${base}/expected.md`, 'utf8');
+  // 判定口径 MUST 写死在样本里，不能等跑的时候现想
+  assert.match(expected, /该归并的/, '缺"该归并"的那张表');
+  assert.match(expected, /不该归并的/, '缺"不该归并"的那张表');
+  assert.match(expected, /判定口径/, '没写死判定口径');
+  assert.match(expected, /退化/, '没说什么情况算退化');
+  assert.match(readFileSync(`${base}/last-run.md`, 'utf8'), /\d{4}-\d{2}-\d{2}/, '没有跑过的日期');
+});
+
+test('常驻提示词没有因为这次改动变胖', () => {
+  // SKILL.md 是每次唤起都常驻的那一份，红线 10000 字符；
+  // 抽取纪律是按需加载层，宽松些但也不该无限长。
+  assert.ok(readFileSync('SKILL.md', 'utf8').length < 10000, 'SKILL.md 超过常驻红线');
+  assert.ok(readFileSync('references/抽取纪律.md', 'utf8').length < 12000,
+    '抽取纪律过长，按需加载层也会挤占注意力');
+});
