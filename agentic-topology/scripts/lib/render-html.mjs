@@ -15,7 +15,16 @@ const APP = readFileSync(`${ASSET_DIR}/app.js`, 'utf8').replace(
   applyFilter.toString(),
 );
 
-const WORDS = {
+/**
+ * 界面文案的唯一出处，按语言分两套。
+ *
+ * 描述文件里的正文（方块名、职责、信息说明……）**MUST NOT 翻译**——那是被分析项目
+ * 自己的话，翻了就不是事实了。这里只管框架文案。
+ *
+ * 要插值的句子写成函数：中文「4 个方块」与英文「4 blocks」不只是换词，
+ * 量词位置和单复数都不一样，用 `${n} ${WORDS.block}` 拼是拼不对的。
+ */
+const WORDS_ZH = {
   topology: {
     peer_loop: '大家轮着来',
     manager_worker: '一个总管派活',
@@ -33,6 +42,10 @@ const WORDS = {
     pass_or_skip: '通过或跳过',
     reject_or_halt: '打回或叫停',
   },
+  carrier: {
+    file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
+    interface: '一个对外接口',
+  },
   labels: {
     overview: '编排全貌', back: '回上一层', what: '干什么', inputs: '收到什么',
     outputs: '交出什么', purpose: '它夹在中间是为了解决什么', group: '属于哪一堆',
@@ -40,11 +53,12 @@ const WORDS = {
     abilities: '它能用哪些能力', spawn: '它会不会派别人干活', stop: '它什么时候会停下',
     links: '它跟谁连着', tools: '自带的工具', mcp: '外挂的能力（MCP）',
     skills: '装的技能（Skill）', none: '一个都没有', notSet: '没设',
-    checklist: '这几处得你自己去核实',
+    checklist: '这几处得你自己去核实', notFilled: '未填写',
     start: '从哪开始', end: '在哪结束', folded: '收起来看', expand: '全部展开', detail: '详情',
     close: '关闭', saveLayout: '把位置存回这个文件', resetLayout: '恢复自动摆放', nodeState: '方块情况',
     dragHint: '方块和分组都能拖；拖完点「把位置存回这个文件」，下次打开还是这个样子',
-    concurrent: '同时干', items: '件', fan: '会派别人', noFan: '不会派别人', in: '进', out: '出',
+    concurrent: '同时干', items: '件', fan: '会派别人', noFan: '不会派别人',
+    spawnYes: '会派别人干活', spawnNo: '不会派别人干活', in: '进', out: '出',
     line: '第', confirmed: '查证', inCount: '条进来', outCount: '条出去',
     foldedHint: '收起来只是不显示堆里面的线，一个方块一条线都没少',
     edgeCategory: '这是条什么线', trigger: '什么情况下走', carrier: '靠什么交过去',
@@ -57,12 +71,135 @@ const WORDS = {
     infoList: '这张图里流转的信息', infoCount: '份', infoNameCol: '叫什么',
     infoEmpty: '这张图里还没有流转的信息', seeAllInfo: '看全部',
     edgesCarrying: '条线传它', infoFlow: '从哪来到哪去', infoLines: '流经哪几条线',
-    back: '回到图上',
+    backToCanvas: '回到图上', clearLit: '取消高亮',
+    kindFilter: 'AI 还是程序', groupFilter: '分堆', noGroup: '没有分堆',
+    incomplete: '还没分析完，这张图不全',
+    emptyTitle: '还没有可画的东西', emptyHint: '打开写好的描述，填入方块和连线后再出图。',
+    unreadable: '无法读取', savedOk: '位置已经写回文件了',
+    saveFallback: '这个浏览器不支持直接写回文件，已经下载了一份带位置的新文件，覆盖原文件即可',
     limits: {
       steps: '走多少步', time: '花多长时间', cost: '花钱', consecutive_failures: '连着失败几次',
     },
   },
+  phrases: {
+    nodeCount: (n) => `${n} 个方块`,
+    edgeCount: (n) => `${n} 条连线`,
+    checkCount: (n) => `${n} 处`,
+    confirmedAt: (date) => `查证时间 ${date}`,
+    lineRange: (from, to) => `第 ${from}–${to} 行`,
+    unreadableRange: (from, to, reason) => `读不到这个文件的第 ${from}–${to} 行：${reason}`,
+    abilityCount: (tools, mcp) => `工具 ${tools} · MCP ${mcp}`,
+    stale: (reason) => `这张图可能已经过期：${reason}`,
+    foldCard: (nodes, inner) => `${nodes} 个方块 · 里面 ${inner} 条线`,
+    foldKinds: (agents, programs, decisions) => [
+      agents ? `${agents} 个 AI` : '', programs ? `${programs} 个程序` : '',
+      decisions ? `${decisions} 个岔路口` : '',
+    ].filter(Boolean).join(' · '),
+    foldedHint: (inner) => `收起来只是不显示堆里面那 ${inner} 条线，一个方块一条线都没少`,
+    carryingCount: (n) => `${n} 条线传它`,
+    seeAll: (n) => `看全部 ${n} 份`,
+    infoTotal: (n) => `${n} 份`,
+  },
 };
+
+const WORDS_EN = {
+  topology: {
+    peer_loop: 'everyone takes turns',
+    manager_worker: 'one manager hands out the work',
+    decentralized_handoff: 'each one passes it along',
+    fixed_workflow: 'one fixed assembly line',
+  },
+  context: { full: 'everyone sees everything', isolated: 'each sees only its own', mixed: 'some of it is shared' },
+  kind: { agent: 'AI', program: 'program', decision: 'fork in the road' },
+  exitKind: { normal: 'finished normally', abnormal: 'went wrong', cancelled: 'called off' },
+  confidence: {
+    certain: 'in place (checked)', inferred: 'a guess (not verified)',
+    unread: 'missing (could not find out)', design: 'still on paper',
+  },
+  category: {
+    normal: 'carries on',
+    pass_or_skip: 'passed or skipped',
+    reject_or_halt: 'sent back or stopped',
+  },
+  carrier: {
+    file: 'a file', bundle: 'a packed-up set of data', prompt: 'a prompt', event: 'an event',
+    other: 'something else', interface: 'an interface others call',
+  },
+  labels: {
+    overview: 'the whole picture', back: 'back up one level', what: 'what it does',
+    inputs: 'what it gets', outputs: 'what it hands over',
+    purpose: 'why it sits in the middle', group: 'which pile it is in',
+    concurrency: 'how many run at once', source: 'where this was found',
+    prompt: 'where its prompt is written',
+    abilities: 'what it is allowed to use', spawn: 'whether it hands work to others',
+    stop: 'when it stops', links: 'what it is connected to', tools: 'built-in tools',
+    mcp: 'plugged-in abilities (MCP)', skills: 'installed skills', none: 'none at all',
+    notSet: 'not set',
+    checklist: 'you need to check these yourself', notFilled: 'not filled in',
+    start: 'where it starts', end: 'where it ends', folded: 'fold it up', expand: 'open it all up',
+    detail: 'details', close: 'close', saveLayout: 'save these positions back into this file',
+    resetLayout: 'put them back where they were', nodeState: 'how sure we are',
+    dragHint: 'blocks and piles can be dragged; when you are done click'
+      + ' "save these positions back into this file" and it will look the same next time',
+    concurrent: 'runs', items: 'at a time', fan: 'hands work to others',
+    noFan: 'does not hand work to others',
+    spawnYes: 'hands work to others', spawnNo: 'does not hand work to others', in: 'in', out: 'out',
+    line: 'lines', confirmed: 'checked', inCount: 'coming in', outCount: 'going out',
+    foldedHint: 'folding only hides the lines inside a pile; nothing is left out',
+    edgeCategory: 'what kind of line this is', trigger: 'when this line is taken',
+    carrier: 'how it is handed over', confirmedTime: 'checked on',
+    screening: 'what gets checked before it is accepted',
+    concurrencyControl: 'what happens when several arrive at once',
+    payload: 'what this line carries', producedAt: 'when it was made',
+    deliveredAt: 'when it is handed over',
+    infoWhat: 'what it is', infoBlocks: 'roughly what is inside', infoForm: 'what form it takes',
+    infoOrigin: 'where it comes from', infoDestination: 'where it ends up',
+    infoSameAs: 'might be the same as',
+    infoList: 'what moves around in this picture', infoCount: 'pieces', infoNameCol: 'name',
+    infoEmpty: 'nothing moves around in this picture yet', seeAllInfo: 'see all',
+    edgesCarrying: 'lines carry it', infoFlow: 'from where to where',
+    infoLines: 'which lines carry it',
+    backToCanvas: 'back to the picture', clearLit: 'stop highlighting',
+    kindFilter: 'AI or program', groupFilter: 'piles', noGroup: 'no piles',
+    incomplete: 'not finished reading yet — this picture is incomplete',
+    emptyTitle: 'nothing to draw yet',
+    emptyHint: 'open a written description, fill in blocks and lines, then draw it again.',
+    unreadable: 'could not read it', savedOk: 'the positions are back in the file',
+    saveFallback: 'this browser cannot write the file directly; a new file with the positions'
+      + ' has been downloaded — replace the original with it',
+    limits: {
+      steps: 'how many steps', time: 'how long', cost: 'how much it costs',
+      consecutive_failures: 'how many failures in a row',
+    },
+  },
+  phrases: {
+    nodeCount: (n) => `${n} block${n === 1 ? '' : 's'}`,
+    edgeCount: (n) => `${n} line${n === 1 ? '' : 's'}`,
+    checkCount: (n) => `${n} spot${n === 1 ? '' : 's'}`,
+    confirmedAt: (date) => `checked on ${date}`,
+    lineRange: (from, to) => `lines ${from}–${to}`,
+    unreadableRange: (from, to, reason) => `cannot read lines ${from}–${to} of this file: ${reason}`,
+    abilityCount: (tools, mcp) => `${tools} tools · ${mcp} MCP`,
+    stale: (reason) => `this picture may be out of date: ${reason}`,
+    foldCard: (nodes, inner) => `${nodes} block${nodes === 1 ? '' : 's'} · `
+      + `${inner} line${inner === 1 ? '' : 's'} inside`,
+    foldKinds: (agents, programs, decisions) => [
+      agents ? `${agents} AI` : '', programs ? `${programs} program${programs === 1 ? '' : 's'}` : '',
+      decisions ? `${decisions} fork${decisions === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join(' · '),
+    foldedHint: (inner) => `folding only hides the ${inner} line${inner === 1 ? '' : 's'} inside the piles;`
+      + ' nothing is left out',
+    carryingCount: (n) => `${n} line${n === 1 ? '' : 's'} carry it`,
+    seeAll: (n) => `see all ${n}`,
+    infoTotal: (n) => `${n} piece${n === 1 ? '' : 's'}`,
+  },
+};
+
+export const LANGS = { zh: WORDS_ZH, en: WORDS_EN };
+
+// 出图是一次性的 CLI 进程，一次只出一张图、一种语言，所以文案表用模块级变量切换，
+// 不必把 lang 穿过每一个渲染函数。renderHtml 是唯一的写入点。
+let WORDS = WORDS_ZH;
 
 /** 将任意描述文本安全转成 HTML 实体。 */
 export function esc(value) {
@@ -79,7 +216,7 @@ function value(item, fallback = WORDS.labels.notSet) {
 }
 
 function optional(item) {
-  return value(item, '未填写');
+  return value(item, WORDS.labels.notFilled);
 }
 
 const FLAG_CLASS = {
@@ -88,15 +225,17 @@ const FLAG_CLASS = {
 
 // 卡片顶栏就那么宽，「推测（只是猜的）」这种全称会把徽章挤成两行、顶掉正文的位置。
 // 卡片上只写括号前那半截，全称留给筛选器和详情弹层——两处说的是同一件事，MUST 保持同源。
-const SHORT_CONFIDENCE = Object.fromEntries(
-  Object.entries(WORDS.confidence).map(([key, label]) => [key, label.replace(/（.*）$/, '')]),
-);
+// 方块上那枚小徽章只放得下短的一半，括号里的解释挪进 title。
+// MUST 按当前语言现算：模块加载时算一次会把中文那套焊死在英文页面上。
+function shortConfidence(key) {
+  return String(WORDS.confidence[key] ?? key).replace(/[（(][^）)]*[）)]\s*$/, '').trim();
+}
 
 function flag(confidence, short = false) {
   const cls = FLAG_CLASS[confidence] || 'is-unknown';
-  const words = short ? SHORT_CONFIDENCE : WORDS.confidence;
+  const text = short ? shortConfidence(confidence) : (WORDS.confidence[confidence] || confidence);
   return `<span class="topo-flag ${cls}" title="${esc(WORDS.confidence[confidence] || confidence)}">` +
-    `${value(words[confidence] || confidence)}</span>`;
+    `${value(text)}</span>`;
 }
 
 /** 正文字段一律走 Markdown：描述里常有分段、列表、行内代码，纯文本会糊成一坨。 */
@@ -180,12 +319,13 @@ function overview(data, pageLayout, staleness) {
     `<span class="topo-exit-kind">${value(WORDS.exitKind[exit.kind] || exit.kind, '')}</span></div>` +
     `${prose(exit.condition)}</div>`).join('');
   const incompleteNotice = data.analysis_complete === false
-    ? '<div class="alert alert-warning">还没分析完，这张图不全</div>' : '';
+    ? `<div class="alert alert-warning">${esc(WORDS.labels.incomplete)}</div>` : '';
   const staleNotice = staleness?.stale
-    ? `<div class="alert alert-warning">这张图可能已经过期：${value(staleness.reason)}</div>` : '';
+    ? `<div class="alert alert-warning">${esc(WORDS.phrases.stale(String(staleness.reason ?? '')))}</div>`
+    : '';
   const emptyNotice = (data.nodes || []).length === 0
-    ? '<div class="alert"><strong>还没有可画的东西</strong>' +
-      '<span class="text-sm muted">打开写好的描述，填入方块和连线后再出图。</span></div>' : '';
+    ? `<div class="alert"><strong>${esc(WORDS.labels.emptyTitle)}</strong>` +
+      `<span class="text-sm muted">${esc(WORDS.labels.emptyHint)}</span></div>` : '';
   const marker = (id, color) => `<marker id="${id}" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">` +
     `<path d="M0,0 L6,3 L0,6 z" fill="${color}"/></marker>`;
   const markers = `<defs>${marker('ah-main', 'var(--primary)')}${marker('ah-ok', 'var(--success)')}` +
@@ -197,10 +337,12 @@ function overview(data, pageLayout, staleness) {
     `</div><div class="screen">` +
     `<div class="row"><span class="badge badge-secondary">${value(WORDS.topology[data.graph?.topology])}</span>` +
     `<span class="badge badge-outline">${value(WORDS.context[data.graph?.context_sharing])}</span>` +
-    `<span class="topo-flag is-sure">${(data.nodes || []).length} 个方块</span>` +
-    `<span class="topo-flag is-sure">${(data.edges || []).length} 条连线</span>` +
-    `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ${data.checklist?.length || 0} 处</span>` +
-    `<span class="text-xs muted">查证时间 ${value(data.generated_at)}</span></div>` +
+    `<span class="topo-flag is-sure">${esc(WORDS.phrases.nodeCount((data.nodes || []).length))}</span>` +
+    `<span class="topo-flag is-sure">${esc(WORDS.phrases.edgeCount((data.edges || []).length))}</span>` +
+    `<span class="topo-flag is-sure">${esc(WORDS.labels.checklist)} ` +
+    `${esc(WORDS.phrases.checkCount(data.checklist?.length || 0))}</span>` +
+    `<span class="text-xs muted">${esc(WORDS.phrases.confirmedAt(String(data.generated_at ?? '')))}</span>` +
+    `</div>` +
     incompleteNotice + staleNotice + emptyNotice +
     filterControls(data) +
     `<div class="topo-legend"><span class="topo-legend-item"><span class="topo-swatch"></span>` +
@@ -245,8 +387,9 @@ function filterControls(data) {
   const groups = (data.groups || []).map((group) => checkbox('group', group.id, group.name)).join('');
   return `<div class="topo-filters"><fieldset><legend>${esc(WORDS.labels.nodeState)}</legend>` +
     `${confidence}</fieldset>` +
-    `<fieldset><legend>AI 还是程序</legend>${kinds}</fieldset>` +
-    `<fieldset><legend>分堆</legend>${groups || '<span class="muted text-xs">没有分堆</span>'}</fieldset></div>`;
+    `<fieldset><legend>${esc(WORDS.labels.kindFilter)}</legend>${kinds}</fieldset>` +
+    `<fieldset><legend>${esc(WORDS.labels.groupFilter)}</legend>` +
+    `${groups || `<span class="muted text-xs">${esc(WORDS.labels.noGroup)}</span>`}</fieldset></div>`;
 }
 
 function kv(label, content) {
@@ -266,20 +409,20 @@ function promptSection(node, prompt) {
       `<span>1</span><span class="mono">${value(text)}</span></div></div></div>`;
   } else if (file && source.kind === 'unreadable') {
     body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(file)} ` +
-      `${WORDS.labels.line} ${value(from)}–${value(to)} 行</span></div>` +
-      `<div class="topo-src-body"><span class="text-sm muted">读不到这个文件的第 ` +
-      `${value(from)}–${value(to)} 行：` +
-      `${value(source.reason || '无法读取')}</span></div></div>`;
+      `${esc(WORDS.phrases.lineRange(from, to))}</span></div>` +
+      `<div class="topo-src-body"><span class="text-sm muted">` +
+      `${esc(WORDS.phrases.unreadableRange(from, to, source.reason || WORDS.labels.unreadable))}` +
+      `</span></div></div>`;
   } else if (file) {
     const lines = Array.isArray(source.lines) ? source.lines : [];
     const renderedLines = lines.map((line, index) => `<div class="topo-line is-hit">` +
       `<span>${Number(from) + index}</span><span class="mono">${value(line)}</span></div>`).join('');
     body = `<div class="topo-src"><div class="topo-src-head"><span class="mono">${value(file)} ` +
-      `${WORDS.labels.line} ${value(from)}–${value(to)} 行</span></div>` +
+      `${esc(WORDS.phrases.lineRange(from, to))}</span></div>` +
       `<div class="topo-src-body">${renderedLines}</div></div>`;
   }
   const mark = file
-    ? `${WORDS.labels.line} ${value(from)}–${value(to)} 行`
+    ? esc(WORDS.phrases.lineRange(from, to))
     : '';
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.prompt)}` +
     `<span class="topo-acc-mark">${mark}</span></summary><div class="topo-acc-body">${body}</div></details>`;
@@ -293,7 +436,8 @@ function abilities(node) {
   const section = (title, items) => `<div class="text-xs font-semibold muted">${esc(title)}</div>` +
     `<div class="row">${list(items)}</div>`;
   return `<details class="topo-acc-item"><summary class="topo-acc-head">${esc(WORDS.labels.abilities)}` +
-    `<span class="topo-acc-mark">工具 ${node.tools?.length || 0} · MCP ${node.mcp?.length || 0}` +
+    `<span class="topo-acc-mark">${esc(WORDS.phrases.abilityCount(node.tools?.length || 0,
+      node.mcp?.length || 0))}` +
     ` · Skill ${node.skills?.length || 0}</span></summary>` +
     `<div class="topo-acc-body"><div class="stack-sm">${section(WORDS.labels.tools, node.tools)}` +
     `<div class="separator"></div>` +
@@ -353,7 +497,7 @@ function detail(data, node, enriched) {
     `${esc(WORDS.labels.spawn)}<span class="topo-acc-mark">` +
     `${node.spawns_subagents ? WORDS.labels.fan : WORDS.labels.noFan}</span></summary>` +
     `<div class="topo-acc-body"><div class="stack-sm"><div class="text-sm">` +
-    `${node.spawns_subagents ? `${WORDS.labels.fan}干活` : `${WORDS.labels.noFan}干活`}</div>` +
+    `${esc(node.spawns_subagents ? WORDS.labels.spawnYes : WORDS.labels.spawnNo)}</div>` +
     `${subcards || `<span class="text-xs muted">${esc(WORDS.labels.none)}</span>`}</div></div></details>` : '';
   const sections = `<details class="topo-acc-item" open><summary class="topo-acc-head">` +
     `${esc(WORDS.labels.what)}<span class="topo-acc-mark">${flag(node.confidence)}</span></summary>` +
@@ -368,12 +512,6 @@ function detail(data, node, enriched) {
     `<div class="topo-node-name">${value(node.name)}</div></div></div>` +
     `<div class="topo-acc">${sections}</div></section>`;
 }
-
-const CARRIER_WORDS = {
-  file: '文件', bundle: '一份打包好的数据', prompt: '提示词', event: '事件', other: '别的',
-};
-// 形态比交法多一档：接口本身是一份信息，但没人能把接口当载体交出去。
-const FORM_WORDS = { ...CARRIER_WORDS, interface: '一个对外接口' };
 
 function edgeDetail(edge, infoIndex) {
   const edgeKey = `${edge.from}->${edge.to}`;
@@ -398,11 +536,11 @@ function edgeDetail(edge, infoIndex) {
       `<div class="topo-payload-head">${flag(info.confidence)}${value(info.name)}</div>` +
       `<dl class="kv">${kv(WORDS.labels.infoWhat, prose(info.what))}` +
       `${kv(WORDS.labels.infoBlocks, blocks)}` +
-      `${kv(WORDS.labels.infoForm, value(FORM_WORDS[info.form] || info.form))}` +
+      `${kv(WORDS.labels.infoForm, value(WORDS.carrier[info.form] || info.form))}` +
       `${kv(WORDS.labels.infoOrigin, value(info.origin))}` +
       `${kv(WORDS.labels.infoDestination, value(info.destination))}` +
       `${sameAs}` +
-      `${kv(WORDS.labels.carrier, value(CARRIER_WORDS[payload.carrier] || payload.carrier))}` +
+      `${kv(WORDS.labels.carrier, value(WORDS.carrier[payload.carrier] || payload.carrier))}` +
       `${kv(WORDS.labels.producedAt, value(info.produced_at))}` +
       `${kv(WORDS.labels.deliveredAt, value(payload.delivered_at))}</dl></div>`;
   }).join('');
@@ -443,12 +581,12 @@ function infoCard(data) {
     return `<li class="topo-info-row">${infoName(item)}` +
       `${warnBadge(data.checklist, item.name || item.id)}` +
       `<span class="text-xs muted grow">${value(item.what)}</span>` +
-      `<span class="text-xs muted">${count} ${esc(WORDS.labels.edgesCarrying)}</span></li>`;
+      `<span class="text-xs muted">${esc(WORDS.phrases.carryingCount(count))}</span></li>`;
   }).join('');
   const more = `<button class="btn btn-outline btn-sm" data-goto-info>` +
-    `${esc(WORDS.labels.seeAllInfo)} ${list.length} ${esc(WORDS.labels.infoCount)}</button>`;
+    `${esc(WORDS.phrases.seeAll(list.length))}</button>`;
   return `<div class="topo-pill"><div class="topo-pill-head">${esc(WORDS.labels.infoList)}` +
-    `<span class="topo-acc-mark">${list.length} ${esc(WORDS.labels.infoCount)}</span></div>` +
+    `<span class="topo-acc-mark">${esc(WORDS.phrases.infoTotal(list.length))}</span></div>` +
     `<ul class="topo-info-list">${rows}</ul>${more}</div>`;
 }
 
@@ -456,9 +594,9 @@ function infoCard(data) {
 function infoView(data) {
   const list = data.information || [];
   const head = `<section id="view-info" class="view" hidden><div class="app-bar">` +
-    `<button class="btn btn-outline btn-sm" data-back>${esc(WORDS.labels.back)}</button>` +
+    `<button class="btn btn-outline btn-sm" data-back>${esc(WORDS.labels.backToCanvas)}</button>` +
     `<span class="topo-crumb">${esc(WORDS.labels.infoList)}</span><span class="grow"></span>` +
-    `<span class="topo-flag is-sure">${list.length} ${esc(WORDS.labels.infoCount)}</span></div>` +
+    `<span class="topo-flag is-sure">${esc(WORDS.phrases.infoTotal(list.length))}</span></div>` +
     `<div class="screen">`;
   if (!list.length) {
     return `${head}<div class="alert"><strong>${esc(WORDS.labels.infoEmpty)}</strong></div></div></section>`;
@@ -476,9 +614,9 @@ function infoView(data) {
       `<td>${infoName(item)}${warnBadge(data.checklist, item.name || item.id)}${same}</td>` +
       `<td>${prose(item.what)}</td>` +
       `<td>${blocks}</td>` +
-      `<td>${value(FORM_WORDS[item.form] || item.form)}</td>` +
+      `<td>${value(WORDS.carrier[item.form] || item.form)}</td>` +
       `<td class="mono text-xs">${value(item.origin)} → ${value(item.destination)}</td>` +
-      `<td class="text-xs">${carrying.length} ${esc(WORDS.labels.edgesCarrying)}<br>` +
+      `<td class="text-xs">${esc(WORDS.phrases.carryingCount(carrying.length))}<br>` +
       `<span class="mono muted">${lines}</span></td>` +
       `<td class="mono text-xs">${value(item.source?.refs?.join(' · '))}<br>` +
       `<span class="muted">${value(item.source?.confirmed_at)}</span></td></tr>`;
@@ -490,18 +628,15 @@ function infoView(data) {
     `<thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div></div></section>`;
 }
 
-function folded(data, warnings) {
+function folded(data, warnings, lang) {
   const summary = foldSummary(data);
-  const foldedLayout = layoutFolded(data);
+  const foldedLayout = layoutFolded(data, { lang });
   const cards = [...foldedLayout.cards.values()].map((card) => {
-    const badges = [
-      card.agents ? `${card.agents} 个 AI` : '',
-      card.programs ? `${card.programs} 个程序` : '',
-      card.decisions ? `${card.decisions} 个岔路口` : '',
-    ].filter(Boolean).join(' · ');
+    const badges = WORDS.phrases.foldKinds(card.agents, card.programs, card.decisions);
     return `<div class="topo-fold" style="left:${card.x}px;top:${card.y}px;width:${card.w}px;height:${card.h}px">` +
       `<div class="topo-fold-name">${value(card.name)}</div>` +
-      `<div class="topo-fold-count">${card.nodeCount} 个方块 · 里面 ${card.innerEdgeCount} 条线</div>` +
+      `<div class="topo-fold-count">${esc(WORDS.phrases.foldCard(card.nodeCount,
+        card.innerEdgeCount))}</div>` +
       `<div class="text-xs muted">${value(card.chain)}</div>` +
       `<div class="text-xs muted">${value(badges)}</div></div>`;
   }).join('');
@@ -523,16 +658,27 @@ function folded(data, warnings) {
     `<span class="topo-crumb-now">${esc(WORDS.labels.folded)}</span></span><span class="grow"></span>` +
     `<button class="btn btn-outline btn-sm" data-expand>${esc(WORDS.labels.expand)}</button></div>` +
     `<div class="screen">${stage}` +
-    `<p class="text-xs muted">收起来只是不显示堆里面那 ${innerCount} 条线，` +
-    `一个方块一条线都没少</p></div></section>`;
+    `<p class="text-xs muted">${esc(WORDS.phrases.foldedHint(innerCount))}</p></div></section>`;
 }
 
 /** 将拓扑数据、布局和富化结果渲染成单文件离线 HTML。 */
-export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings = [] }) {
+export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings = [], lang = 'zh' }) {
+  // 这里是 WORDS 的唯一写入点，MUST 在任何渲染函数跑起来之前设好。
+  WORDS = LANGS[lang] || LANGS.zh;
   const payload = {
     ...data,
     checklist: enriched.checklist || [],
     prompts: [...(enriched.prompts || new Map()).entries()],
+    // 页面脚本自己要说的那几句话也从这里取——app.js 是原样内联进页面的，
+    // 里面写死中文就没法英文化了。
+    ui: {
+      clearLit: WORDS.labels.clearLit,
+      detail: WORDS.labels.detail,
+      savedOk: WORDS.labels.savedOk,
+      saveFallback: WORDS.labels.saveFallback,
+      carrying: Object.fromEntries((data.information || []).map((item) =>
+        [item.id, WORDS.phrases.carryingCount(edgesCarrying(data, item.id).length)])),
+    },
   };
   const json = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script');
   const details = (data.nodes || []).map((node) => detail(data, node, enriched)).join('');
@@ -549,7 +695,7 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
     `${esc(WORDS.labels.close)}</button></div>` +
     `<div class="topo-modal-body" id="topo-modal-body"></div></div></div>`;
   const body = `<div class="topo-views">${overview(payload, pageLayout, enriched.staleness)}` +
-    `${folded(data, warnings)}${infoView(payload)}` +
+    `${folded(data, warnings, lang)}${infoView(payload)}` +
     `<div id="detail-store" hidden>${details}${edgeDetails}</div>${modal}</div>`;
   return SHELL.replace('<!--SLOT:STYLE-->', `${THEME}\n${COMPONENTS}\n${TOPO}`)
     .replace('<!--SLOT:DATA-->', json).replace('<!--SLOT:BODY-->', body).replace('<!--SLOT:SCRIPT-->', APP);

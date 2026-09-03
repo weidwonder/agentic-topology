@@ -85,10 +85,10 @@ function highlightInfo(infoId) {
     what.className = 'grow muted';
     what.textContent = info.what || '';
     const count = document.createElement('span');
-    count.textContent = `${carrying.length} 条线传它`;
+    count.textContent = data.ui?.carrying?.[infoId] ?? String(carrying.length);
     const close = document.createElement('button');
     close.className = 'btn btn-ghost btn-sm';
-    close.textContent = '取消高亮';
+    close.textContent = data.ui?.clearLit ?? '';
     close.dataset.clearLit = '';
     bar.replaceChildren(name, what, count, close);
   }
@@ -388,7 +388,7 @@ async function saveLayout() {
       await writable.write(html);
       await writable.close();
       markDirty(false);
-      setHint('位置已经写回文件了');
+      setHint(readData()?.ui?.savedOk ?? '');
       return;
     } catch (error) {
       if (error && error.name === 'AbortError') return;
@@ -404,7 +404,7 @@ async function saveLayout() {
   link.click();
   URL.revokeObjectURL(url);
   markDirty(false);
-  setHint('这个浏览器不支持直接写回文件，已经下载了一份带位置的新文件，覆盖原文件即可');
+  setHint(readData()?.ui?.saveFallback ?? '');
 }
 
 // ---- 事件接线 --------------------------------------------------------------
@@ -438,7 +438,8 @@ document.addEventListener('click', (event) => {
   const node = event.target.closest('[data-goto]');
   if (node && !node.dataset.suppressClick) {
     const detail = document.getElementById(`detail-${node.dataset.goto}`);
-    openModal(detail, node.querySelector('.topo-node-name')?.textContent || '详情');
+    openModal(detail, node.querySelector('.topo-node-name')?.textContent
+      || readData()?.ui?.detail || '');
     return;
   }
   // 点一条线 MUST 能看到它的详情（FR-026）——线本身、加宽的点击区、线上的标注都算。
