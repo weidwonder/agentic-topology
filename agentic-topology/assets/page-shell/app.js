@@ -145,8 +145,9 @@ function boxOf(element) {
 // 一个方块上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
 // 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按两个方块的相对位置定「走哪条边框」，
 // 再把落在同一条边框上的接点沿这条边框排开。
-// 这两个值与下面的 anchorRatio MUST 与 scripts/lib/layout.mjs 里同名的那份一致，
-// 否则同一张图在出图时和拖过之后接点会跳。
+// 这两个常量与下面四个分槽函数（anchorRatio / anchorPoint / anchorSortKey / assignAnchors）
+// 是 scripts/lib/layout.mjs 那份的逐字副本，改这边 MUST 同改那边，否则同一张图在出图时
+// 和拖过之后接点会跳；六个符号是否还同解由 tests/edges.test.mjs 的「同源」用例逐个钉住。
 const ANCHOR_PAD = 10;
 const ANCHOR_SLOT = 18;
 
@@ -197,15 +198,21 @@ function assignAnchors(plans) {
   for (const endpoints of bySide.values()) {
     endpoints.sort((a, b) => (a.sortKey - b.sortKey)
       || (a.tieBreak < b.tieBreak ? -1 : a.tieBreak > b.tieBreak ? 1 : 0));
+    // 同一桶里的端点按定义就是同一个方块的同一条边框，box 取第一个即可，下面一路用它。
     const { box, side } = endpoints[0];
     const length = side === 'left' || side === 'right' ? box.h : box.w;
     endpoints.forEach((endpoint, index) => {
-      endpoint.point = anchorPoint(endpoint.box, side, anchorRatio(index, endpoints.length, length));
+      endpoint.point = anchorPoint(box, side, anchorRatio(index, endpoints.length, length));
     });
   }
 }
 
-/** 接点定了之后拉贝塞尔：控制点朝出发的那条边框的法线方向探出去，线才是从边上「长」出来的。 */
+/**
+ * 接点定了之后拉贝塞尔：控制点朝出发的那条边框的法线方向探出去，线才是从边上「长」出来的。
+ * 只收 fromSide 是因为**假定 toSide 是 fromSide 的对边**（右↔左、下↔上），这由 edgeSides() 保证，
+ * 所以两端的外推方向必然相反、同一个 sign 一正一负就够。将来若加一种不对称的挑边（比如 右→上），
+ * MUST 同时把 toSide 传进来各算各的 sign，否则这里会静默画错。
+ */
 function routeEdge(start, end, fromSide) {
   const horizontal = fromSide === 'left' || fromSide === 'right';
   const sign = fromSide === 'right' || fromSide === 'bottom' ? 1 : -1;

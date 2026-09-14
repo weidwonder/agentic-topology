@@ -216,7 +216,9 @@ function buildGeometry({ start, end, c1, c2 }) {
 // 一个节点上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
 // 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按走线情形定「走哪条边框」（edgeShape），
 // 再把落在同一条边框上的接点沿这条边框排开（assignAnchors）。
-// 这两个值 MUST 与 assets/page-shell/app.js 里同名的那两个一致，否则拖动前后接点会跳。
+// 这两个常量与下面四个分槽函数（anchorRatio / anchorPoint / anchorSortKey / assignAnchors）
+// 在 assets/page-shell/app.js 里有一份逐字复制的副本，改这边 MUST 同改那边，否则拖动前后接点会跳；
+// 六个符号是否还同解由 tests/edges.test.mjs 的「同源」用例逐个钉住。
 const ANCHOR_PAD = 10;
 const ANCHOR_SLOT = 18;
 
@@ -259,10 +261,11 @@ function assignAnchors(plans) {
   for (const endpoints of bySide.values()) {
     endpoints.sort((a, b) => (a.sortKey - b.sortKey)
       || (a.tieBreak < b.tieBreak ? -1 : a.tieBreak > b.tieBreak ? 1 : 0));
+    // 同一桶里的端点按定义就是同一个方块的同一条边框，box 取第一个即可，下面一路用它。
     const { box, side } = endpoints[0];
     const length = side === 'left' || side === 'right' ? box.h : box.w;
     endpoints.forEach((endpoint, index) => {
-      endpoint.point = anchorPoint(endpoint.box, side, anchorRatio(index, endpoints.length, length));
+      endpoint.point = anchorPoint(box, side, anchorRatio(index, endpoints.length, length));
     });
   }
 }
@@ -274,6 +277,7 @@ export const EDGE_ANCHOR = {
   PAD: ANCHOR_PAD,
   SLOT: ANCHOR_SLOT,
   ratio: anchorRatio,
+  point: anchorPoint,
   sortKey: anchorSortKey,
   assign: assignAnchors,
 };

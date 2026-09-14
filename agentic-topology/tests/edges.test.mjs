@@ -205,7 +205,9 @@ test('来回两条边各自占一个槽位，MUST NOT 叠成一条', () => {
   const 回 = E(双向, 'N2', 'N1');
   assert.notDeepEqual(起点(去.d), 终点(回.d), 'N1 上一出一进 MUST 分在两个槽位');
   assert.notDeepEqual(终点(去.d), 起点(回.d), 'N2 上一进一出 MUST 分在两个槽位');
-  assert.ok(最近距离(去.d, 回.d) > 0,
+  // 地板取一个槽距：分到两个相邻槽位的两条线，至少也该差这么远。
+  // 写成 > 0 是守不住的——接点退化到几乎重合它照样绿。
+  assert.ok(最近距离(去.d, 回.d) >= EDGE_ANCHOR.SLOT,
     `两个方向最近只差 ${最近距离(去.d, 回.d).toFixed(1)}px，看上去还是一条线`);
 });
 
@@ -223,6 +225,15 @@ test('边界：没有边、以及自环，MUST NOT 出错；自环两端也不�
   空图.edges = [];
   assert.doesNotThrow(() => layout(空图));
   assert.equal(layout(空图).edges.length, 0);
+
+  // 「一个节点、一条边都没有」是另一格：连分桶都进不去，别在取 endpoints[0] 时炸掉。
+  const 独苗 = { groups: [{ id: 'g1', name: '甲', order: 1 }],
+    nodes: [{ id: 'ONE', name: 'ONE', kind: 'program', responsibility: '', group: 'g1',
+      confidence: 'certain' }],
+    edges: [], information: [] };
+  assert.doesNotThrow(() => layout(独苗));
+  assert.equal(layout(独苗).nodes.size, 1);
+  assert.equal(layout(独苗).edges.length, 0);
 
   const 自环 = 扇形图(1);
   自环.edges = [{ from: 'HUB', to: 'HUB', category: 'normal', confidence: 'certain', payloads: [] }];
@@ -313,8 +324,9 @@ test('重画时分槽按边算而不是按 path 算：一条边的两个 path �
 // 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
 // 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
 // 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。
-test('浏览器那份分槽规则与出图同源：常量、比例、排序、分槽四样同解', () => {
-  const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorSortKey, assignAnchors } = 取浏览器几何();
+test('浏览器那份分槽规则与出图同源：常量与四个分槽函数逐个同解', () => {
+  const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorPoint, anchorSortKey, assignAnchors }
+    = 取浏览器几何();
   assert.equal(ANCHOR_PAD, EDGE_ANCHOR.PAD, 'app.js 与 layout.mjs 的边框留白 MUST 一致');
   assert.equal(ANCHOR_SLOT, EDGE_ANCHOR.SLOT, 'app.js 与 layout.mjs 的槽距上限 MUST 一致');
 
@@ -323,6 +335,12 @@ test('浏览器那份分槽规则与出图同源：常量、比例、排序、�
       for (let index = 0; index < count; index += 1)
         assert.equal(anchorRatio(index, count, length), EDGE_ANCHOR.ratio(index, count, length),
           `第 ${index}/${count} 个接点在长 ${length} 的边框上算出的位置两边对不上`);
+
+  const 方块 = { x: 40, y: 80, w: 184, h: 90 };
+  for (const side of ['top', 'right', 'bottom', 'left'])
+    for (const ratio of [0, 0.25, 0.5, 0.75, 1])
+      assert.deepEqual(anchorPoint(方块, side, ratio), EDGE_ANCHOR.point(方块, side, ratio),
+        `${side} 边框上 ratio=${ratio} 的接点坐标两边对不上`);
 
   const 对端 = { x: 300, y: 120, w: 184, h: 90 };
   for (const side of ['top', 'right', 'bottom', 'left'])
