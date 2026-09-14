@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FX, data, intersects } from './helpers.mjs';
-import { layout, EDGE_ANCHOR } from '../scripts/lib/layout.mjs';
+import { FX, TMP, data, intersects, renderOk, sect } from './helpers.mjs';
+import { layout, EDGE_ANCHOR, EDGE_LABEL } from '../scripts/lib/layout.mjs';
 
 /** 把一条 d 均匀采样成一串点，用来量两条线离得有多远。 */
 function 采样(d, count = 60) {
@@ -292,7 +292,7 @@ test('分槽的绝对下界：槽距与接点间距 MUST NOT 缩到看不出是�
  * 把 app.js 里 boxOf..redrawEdges 整段抠出来，配一个最小的假 DOM 跑一遍。
  * 只有这样才量得到「一条边在 DOM 里有两个 path」这件事有没有被数成两条边。
  */
-function 跑一遍重画(节点们, 边键们) {
+function 跑一遍重画(节点们, 边键们, { 带标注 = false } = {}) {
   const js = readFileSync('assets/page-shell/app.js', 'utf8');
   const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/);
   assert.ok(source, 'app.js 里找不到 boxOf..redrawEdges 这一段');
@@ -308,13 +308,25 @@ function 跑一遍重画(节点们, 边键们) {
     d: null,
     setAttribute(name, value) { if (name === 'd') this.d = value; },
   })));
+  // 线上标注按出图产物的真实形状：class + data-label-for，**没有** data-edge-id。
+  const 标注 = { dataset: { labelFor: 边键们[0] }, attrs: { x: '111', y: '222' },
+    setAttribute(name, value) { this.attrs[name] = String(value); } };
   const 假document = {
     querySelectorAll: (selector) => (selector.includes('.topo-node') ? 方块们 : 线们),
-    querySelector: () => null,
+    // MUST 按**键**匹配：见到属性名就返回桩，等于替被测代码把键对上了，
+    // 键写错这条用例照样绿——那正是这次缺陷的形态。
+    querySelector: (selector) => {
+      if (!带标注) return null;
+      const m = selector.match(/text\[data-label-for="([^"]+)"\]/);
+      return m && m[1] === 标注.dataset.labelFor ? 标注 : null;
+    },
   };
-  new Function('document', 'CSS', `${source[0]}\nreturn redrawEdges;`)(
-    假document, { escape: (value) => value })();
-  return 线们;
+  // redrawEdges 要读内嵌数据里的退让参数（唯一真相在 layout.mjs），
+  // 抠出来的那段不含 readData，这里按真实形状喂一份进去。
+  const 假readData = () => ({ labelLayout: { ...EDGE_LABEL, sizes: {} } });
+  new Function('document', 'CSS', 'readData', `${source[0]}\nreturn redrawEdges;`)(
+    假document, { escape: (value) => value }, 假readData)();
+  return 带标注 ? { 线们, 标注 } : 线们;
 }
 
 // 曾经差点按 path 数分槽：一条边两个 path，5 条线会被当成 10 条，接点摊开一倍、
@@ -334,6 +346,197 @@ test('重画时分槽按边算而不是按 path 算：一条边的两个 path �
   const 期望 = Math.min(EDGE_ANCHOR.SLOT, (甲.h - EDGE_ANCHOR.PAD * 2) / 5);
   assert.ok(Math.abs(间距 - 期望) < 0.2,
     `接点间距 ${间距}，按 5 条边算应是 ${期望}——对不上说明把两个 path 当成了两条边`);
+});
+
+// 线拖走了、线上的材料标记留在原地——2026-09-02 把标注的 data-edge-id 摘掉时
+// （它不再是连线浮层的入口），漏改了重算那一处，它至今还按 data-edge-id 找这行字，
+// 永远找不到。所以这里钉的是两件事：出图产物带得出定位属性、重算按同一个属性找。
+test('出图给线上标注留了定位属性，且不是 data-edge-id', () => {
+  // 只查全貌视图：折叠视图的卡片不参与拖动，那边的标注不需要定位属性。
+  const html = sect(renderOk(FX('three-groups.topology.yaml'), 'label-follow.html'), 'view-overview');
+  const 标注们 = [...html.matchAll(/<text class="topo-elabel"([^>]*)>/g)].map((m) => m[1]);
+  assert.ok(标注们.length > 0, '这份 fixture 出图后一条线上标注都没有，钉不住东西');
+  for (const attrs of 标注们) {
+    assert.match(attrs, /data-label-for="[^"]+"/,
+      '线上标注没有定位属性，拖动后 app.js 找不到它，字就留在原地');
+    assert.doesNotMatch(attrs, /data-edge-id=/,
+      '标注不许带 data-edge-id——点击派发按它认「连线浮层入口」，一次点击不能同时干两件事');
+  }
+  // 只查属性名是不够的：名字对、键写错（比如写成 edge.from）运行时等于没修，
+  // 而那正是这次缺陷的形态——两边对不上。所以取值集合 MUST 与线的 edgeId 集合相等。
+  const 标注的键 = new Set([...html.matchAll(/<text class="topo-elabel" data-label-for="([^"]+)"/g)]
+    .map((m) => m[1]));
+  const 线的键 = new Set([...html.matchAll(/<path class="topo-edge[^"]*" data-edge-id="([^"]+)"/g)]
+    .map((m) => m[1]));
+  assert.deepEqual([...标注的键].sort(), [...线的键].sort(),
+    '标注的 data-label-for 取值与线的 data-edge-id 取值对不上——页面侧按边的键去找，找不到就不动');
+
+  const app = readFileSync('assets/page-shell/app.js', 'utf8');
+  assert.match(app, /text\[data-label-for=/,
+    'app.js 没按 data-label-for 找标注——出图侧和重算侧用的属性 MUST 是同一个');
+  assert.doesNotMatch(app, /text\[data-edge-id=/,
+    'app.js 还在按 data-edge-id 找标注，那个属性标注身上没有，找出来永远是 null');
+});
+
+// 光断言属性还不够：属性在、代码也按它找，中间接错一个键照样不动。这里真跑一遍重算。
+test('拖动后重算：线上标注 MUST 跟着线走', () => {
+  const 甲 = { x: 0, y: 300, w: 184, h: 90 };
+  const 乙 = { x: 520, y: 100, w: 184, h: 90 };
+  const { 标注 } = 跑一遍重画([['A', 甲], ['B', 乙]], ['A->B'], { 带标注: true });
+  assert.notEqual(标注.attrs.x, '111', '标注的 x 没动——线跟着走了，材料标记留在原地');
+  assert.notEqual(标注.attrs.y, '222', '标注的 y 没动');
+  const x = Number(标注.attrs.x);
+  const y = Number(标注.attrs.y);
+  assert.ok(x > 甲.x + 甲.w && x < 乙.x, `标注落在 x=${x}，不在两个方块之间的那段线上`);
+  assert.ok(y > 乙.y && y < 甲.y + 甲.h, `标注落在 y=${y}，离这条线太远`);
+});
+
+/**
+ * 在**真出图产物**上触发一次重画，量退让到底有没有起作用。
+ * 只断言「标注跟着走了」是不够的——跟着走了但全落在线中点、压在方块上，等于没修。
+ * 比的是同一张图跑两遍：把退让参数抹成「只试线中点」一遍，用真参数一遍。
+ */
+function 重画后量压叠(fixture, 要退让) {
+  const html = sect(renderOk(FX(fixture), `dodge-${fixture.replace(/[/.]/g, '-')}.html`), 'view-overview');
+  const 全文 = readFileSync(TMP(`dodge-${fixture.replace(/[/.]/g, '-')}.html`), 'utf8');
+  const 数据 = JSON.parse(全文.match(/id="topology-data">([\s\S]*?)<\/script>/)[1]
+    .replace(/<\\\//g, '</'));
+  const 反转义 = (t) => t.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+
+  const 方块框 = [];
+  const 方块们 = [...html.matchAll(/data-node-id="([^"]+)"[^>]*style="[^"]*left:\s*([\d.]+)px;\s*top:\s*([\d.]+)px[^"]*"/g)]
+    .map((m) => {
+      方块框.push({ x: Number(m[2]), y: Number(m[3]), w: 184, h: 90 });
+      return { dataset: { nodeId: 反转义(m[1]) }, style: { left: `${m[2]}px`, top: `${m[3]}px` },
+        offsetWidth: 184, offsetHeight: 90 };
+    });
+  const 线们 = [...html.matchAll(/<path class="topo-edge[^"]*" data-edge-id="([^"]+)"[^>]*?d="([^"]+)"/g)]
+    .map((m) => ({ dataset: { edgeId: 反转义(m[1]) }, d: m[2],
+      setAttribute(n, v) { if (n === 'd') this.d = v; } }));
+  const 标注们 = new Map();
+  for (const m of html.matchAll(/<text class="topo-elabel" data-label-for="([^"]+)" x="([^"]+)" y="([^"]+)"/g)) {
+    标注们.set(反转义(m[1]), { attrs: { x: m[2], y: m[3] },
+      setAttribute(n, v) { this.attrs[n] = String(v); } });
+  }
+
+  const 参数 = 要退让 ? 数据.labelLayout : { ...数据.labelLayout, T_VALUES: [0.5], STEPS: 0 };
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/)[0];
+  new Function('document', 'CSS', 'readData', `${source}\nreturn redrawEdges;`)({
+    querySelectorAll: (sel) => (sel.includes('.topo-node') ? 方块们 : 线们),
+    querySelector: (sel) => {
+      const m = sel.match(/text\[data-label-for="([^"]+)"\]/);
+      return m ? (标注们.get(m[1]) || null) : null;
+    },
+  }, { escape: (v) => v }, () => ({ labelLayout: 参数 }))();
+
+  const 尺寸 = 数据.labelLayout.sizes;
+  const 框 = [...标注们].map(([k, v]) => ({ x: Number(v.attrs.x) - 尺寸[k].w / 2,
+    y: Number(v.attrs.y) - 尺寸[k].h / 2, w: 尺寸[k].w, h: 尺寸[k].h }));
+  const 压 = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  let 互压 = 0;
+  for (let i = 0; i < 框.length; i += 1) {
+    for (let j = i + 1; j < 框.length; j += 1) if (压(框[i], 框[j])) 互压 += 1;
+  }
+  return { 共: 框.length, 压方块: 框.filter((b) => 方块框.some((n) => 压(b, n))).length, 互压 };
+}
+
+// 拖动之后 MUST 重新退让，不能把出图时那套躲让抹平。
+// 曾经只把标注挪到曲线中点就算跟随，密图上一拖就有 3 行字缩进方块底下、4 对糊在一起。
+test('重画之后标注 MUST 重新退让：不压方块、不互相糊', () => {
+  for (const fixture of ['aiudit-internal-control.topology.yaml', 'dense-labels.topology.yaml']) {
+    const 无 = 重画后量压叠(fixture, false);
+    const 有 = 重画后量压叠(fixture, true);
+    assert.ok(无.压方块 + 无.互压 > 0,
+      `${fixture}：不退让时也没有压叠，这份 fixture 证明不了退让有用，换一份`);
+    assert.equal(有.压方块, 0, `${fixture}：退让之后仍有 ${有.压方块} 行字压在方块上`);
+    assert.equal(有.互压, 0, `${fixture}：退让之后仍有 ${有.互压} 对标注糊在一起`);
+  }
+});
+
+// 障碍物 MUST 是**全部**方块，不只是连了边的那些。
+// 曾经按边的两端懒填：一个谁也不连的方块就不在障碍里，标注大大方方压上去。
+// 这种图形状完全合法——tests/fixtures/parse-full.topology.yaml 就有 5 个无边节点。
+test('退让 MUST 躲开没连任何边的方块', () => {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/)[0];
+  const 方块 = (id, x, y) => ({ dataset: { nodeId: id }, style: { left: `${x}px`, top: `${y}px` },
+    offsetWidth: 184, offsetHeight: 90 });
+  // 甲 →(一条横线)→ 乙；孤零零那个正坐在这条线中间，谁也不连。
+  const 孤 = { x: 300, y: 0, w: 184, h: 90 };
+  const 方块们 = [方块('A', 0, 0), 方块('B', 600, 0), 方块('ISO', 孤.x, 孤.y)];
+  const 线们 = [0, 1].map(() => ({ dataset: { edgeId: 'A->B' }, d: null,
+    setAttribute(n, v) { if (n === 'd') this.d = v; } }));
+  const 尺寸 = { w: 80, h: 16 };
+  const 标注 = { dataset: { labelFor: 'A->B' }, attrs: { x: '0', y: '0' },
+    classList: { contains: () => false },
+    setAttribute(name, value) { this.attrs[name] = String(value); } };
+
+  new Function('document', 'CSS', 'readData', `${source}\nreturn redrawEdges;`)({
+    querySelectorAll: (sel) => (sel.includes('.topo-node') ? 方块们 : 线们),
+    querySelector: (sel) => (/text\[data-label-for="A->B"\]/.test(sel) ? 标注 : null),
+  }, { escape: (v) => v },
+  () => ({ labelLayout: { ...EDGE_LABEL, sizes: { 'A->B': 尺寸 } } }))();
+
+  const 框 = EDGE_LABEL.box({ x: Number(标注.attrs.x), y: Number(标注.attrs.y) }, 尺寸);
+  assert.equal(EDGE_LABEL.hits(框, 孤), false,
+    `标注落在 (${标注.attrs.x},${标注.attrs.y})，正压在那个没连边的方块上——`
+    + '障碍物只收了连边的方块');
+});
+
+/** 把 app.js 里那段退让抠出来跑——和分槽那段同一个办法，它不是模块，只能按文本取。 */
+function 取浏览器退让() {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function labelRules\(\)[\s\S]*?\nfunction labelSize\([\s\S]*?\n}\n/);
+  assert.ok(source, 'app.js 里找不到 labelRules..labelSize 这一段');
+  return new Function('readData', `${source[0]}\nreturn { labelBox, intersects, normalAt,`
+    + ' labelCandidates, placeLabel, labelRules };')(() => ({ labelLayout: { ...EDGE_LABEL } }));
+}
+
+// 退让是**两份逐字复制的实现**：出图一份、拖动后浏览器里一份。
+// 只断言「退让有效果」是不够的——两份悄悄漂移时效果还在，只是两边不一样了，
+// 拖一下排布就变样。所以逐个函数比对同解，和分槽那套一个规矩。
+test('两份退让逐个函数同解：盒、相交、法线、候选位、落位', () => {
+  const 浏 = 取浏览器退让();
+  const 线 = { point: (t) => ({ x: 100 + 300 * t, y: 200 + 120 * t * t }) };
+  const 尺寸 = { w: 80, h: 16 };
+
+  for (const p of [{ x: 0, y: 0 }, { x: 37.5, y: -12 }, { x: -400, y: 900 }])
+    assert.deepEqual(浏.labelBox(p, 尺寸), EDGE_LABEL.box(p, 尺寸), `labelBox 在 ${JSON.stringify(p)} 上对不上`);
+
+  const 框 = [{ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 }, { x: 20, y: 20, w: 1, h: 1 }];
+  for (const a of 框) for (const b of 框)
+    assert.equal(浏.intersects(a, b), EDGE_LABEL.hits(a, b), 'intersects 判定对不上');
+
+  for (const t of [0, 0.25, 0.5, 0.75, 1])
+    assert.deepEqual(浏.normalAt(线, t, EDGE_LABEL), EDGE_LABEL.normalAt(线, t),
+      `normalAt 在 t=${t} 上对不上——法线方向不同，两边会往相反方向让`);
+
+  assert.deepEqual(浏.labelCandidates(线, EDGE_LABEL), EDGE_LABEL.candidates(线),
+    '候选位序列对不上——试的位置或先后不同，挑出来的落位就会不同');
+
+  for (const 障碍 of [[], [{ x: 150, y: 190, w: 200, h: 80 }], 框])
+    assert.deepEqual(浏.placeLabel(线, 尺寸, 障碍, EDGE_LABEL), EDGE_LABEL.place(线, 尺寸, 障碍),
+      '同样的障碍物下两边挑出的位置不同');
+});
+
+// 参数只有一份真相（layout.mjs 的 LABEL，经 topology-data 注入）。
+// 有人图省事在 app.js 里补个默认值，两边就悄悄分家了——而且补的那次一定是绿的。
+test('app.js MUST NOT 自带退让参数：拿不到注入就整体不退让', () => {
+  const 浏 = 取浏览器退让();
+  const 空 = new Function('readData',
+    `${readFileSync('assets/page-shell/app.js', 'utf8')
+      .match(/function labelRules\(\)[\s\S]*?\n}\n/)[0]}\nreturn labelRules;`)(() => null)();
+  assert.equal(空.STEPS, 0, '拿不到注入时 MUST 不退让');
+  assert.equal(空.STEP, 0, 'STEP 有自带默认值——那就是第二份真相，和 layout.mjs 不一致时没人会发现');
+  assert.equal(空.COST_T_WEIGHT, 0, 'COST_T_WEIGHT 有自带默认值');
+  assert.deepEqual(空.T_VALUES, [0.5], '拿不到注入时只该试线中点');
+
+  // 正面：拿得到注入时，每个数都等于 layout.mjs 那份
+  const 有 = 浏.labelRules();
+  for (const key of ['STEP', 'STEPS', 'COST_T_WEIGHT', 'NORMAL_DELTA'])
+    assert.equal(有[key], EDGE_LABEL[key], `${key} 与 layout.mjs 对不上`);
+  assert.deepEqual(有.T_VALUES, EDGE_LABEL.T_VALUES);
 });
 
 // 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。

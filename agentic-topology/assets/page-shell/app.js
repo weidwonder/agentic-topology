@@ -28,6 +28,10 @@ function syncFilters() {
     element.classList.toggle('is-hidden', !visibleNodes.has(element.dataset.nodeId));
   for (const element of document.querySelectorAll('[data-edge-id]'))
     element.classList.toggle('is-hidden', !visibleEdges.has(element.dataset.edgeId));
+  // 线上标注身上没有 data-edge-id（它不是连线浮层的入口），所以上面那一轮收不到它。
+  // 漏了这一句，筛掉一条边、它那行字还留在图上——与「拖动后标注不跟随」同一个根因。
+  for (const element of document.querySelectorAll('[data-label-for]'))
+    element.classList.toggle('is-hidden', !visibleEdges.has(element.dataset.labelFor));
 }
 
 // ---- 高亮：这份东西流经哪几条线 --------------------------------------------
@@ -142,6 +146,9 @@ function boxOf(element) {
   };
 }
 
+// 坐标一律留一位小数：出图侧 layout.mjs 的 round() 同口径，免得同一条线两边写法不同。
+const round = (value) => Math.round(value * 10) / 10;
+
 // 一个方块上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
 // 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按两个方块的相对位置定「走哪条边框」，
 // 再把落在同一条边框上的接点沿这条边框排开。
@@ -226,25 +233,104 @@ function routeEdge(start, end, fromSide) {
     ? { x: end.x - sign * offset, y: end.y }
     : { x: end.x, y: end.y - sign * offset };
   const round = (value) => Math.round(value * 10) / 10;
-  const mid = {
-    x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
-    y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8,
+  const point = (t) => {
+    const u = 1 - t;
+    return {
+      x: u ** 3 * start.x + 3 * u ** 2 * t * c1.x + 3 * u * t ** 2 * c2.x + t ** 3 * end.x,
+      y: u ** 3 * start.y + 3 * u ** 2 * t * c1.y + 3 * u * t ** 2 * c2.y + t ** 3 * end.y,
+    };
   };
   return {
     d: `M${round(start.x)},${round(start.y)} C${round(c1.x)},${round(c1.y)} ` +
       `${round(c2.x)},${round(c2.y)} ${round(end.x)},${round(end.y)}`,
-    labelX: round(mid.x),
-    labelY: round(mid.y),
+    point,
   };
+}
+
+// ---- 标注退让 --------------------------------------------------------------
+// 出图时 layout.mjs 会把每行字推开去躲卡片和别人的标注；拖动之后这里得重来一遍，
+// 否则一次重画就把那套排布全抹平、所有字落回线中点糊成一团。
+//
+// 下面五个函数是 scripts/lib/layout.mjs 那一套的**逐字副本**，改这边 MUST 同改那边；
+// 是否还同解由 tests/edges.test.mjs 的「两份退让逐个函数同解」逐个钉住。
+// 参数**一个都不许写在这里**：出图时随 topology-data.labelLayout 注入（唯一真相在
+// layout.mjs 的 LABEL）。拿不到就整体退化成「不退让」，MUST NOT 在这里补默认数字——
+// 补一个就是第二份真相，而且和那边不一致时谁都不会发现。
+function labelRules() {
+  const rules = readData()?.labelLayout;
+  return {
+    T_VALUES: rules?.T_VALUES || [0.5],
+    STEP: rules?.STEP ?? 0,
+    STEPS: rules?.STEPS ?? 0,
+    COST_T_WEIGHT: rules?.COST_T_WEIGHT ?? 0,
+    NORMAL_DELTA: rules?.NORMAL_DELTA ?? 0.01,
+    sizes: rules?.sizes || {},
+  };
+}
+
+function labelBox(point, size) {
+  return { x: point.x - size.w / 2, y: point.y - size.h / 2, w: size.w, h: size.h };
+}
+
+function intersects(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/** 曲线上某点的法线：用邻近两点的切线求，弯的地方也是真的「垂直于线」让开。 */
+function normalAt(geometry, t, rules) {
+  const before = geometry.point(Math.max(0, t - rules.NORMAL_DELTA));
+  const after = geometry.point(Math.min(1, t + rules.NORMAL_DELTA));
+  const dx = after.x - before.x;
+  const dy = after.y - before.y;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: -dy / length, y: dx / length };
+}
+
+/** 沿线取一串 t、每个 t 再往法线两侧一格格挪；越靠中点、离线越近的越先试。 */
+function labelCandidates(geometry, rules) {
+  const candidates = [];
+  for (const t of rules.T_VALUES) {
+    const base = geometry.point(t);
+    const normal = normalAt(geometry, t, rules);
+    for (let step = 0; step <= rules.STEPS; step += 1) {
+      const distances = step === 0 ? [0] : [step * rules.STEP, -step * rules.STEP];
+      for (const distance of distances) {
+        candidates.push({
+          point: { x: base.x + normal.x * distance, y: base.y + normal.y * distance },
+          cost: Math.abs(distance) + rules.COST_T_WEIGHT * Math.abs(t - 0.5),
+        });
+      }
+    }
+  }
+  return candidates.sort((a, b) => a.cost - b.cost);
+}
+
+/** 挑第一个不压到任何障碍物的位置；一个都挑不到就退回线中点（和出图时同一个兜底）。 */
+function placeLabel(geometry, size, obstacles, rules) {
+  const fits = (point) => !obstacles.some((obstacle) => intersects(labelBox(point, size), obstacle));
+  for (const candidate of labelCandidates(geometry, rules)) {
+    if (fits(candidate.point)) return { point: candidate.point, unresolved: false };
+  }
+  return { point: geometry.point(0.5), unresolved: true };
+}
+
+/**
+ * 这行字占多大：优先在浏览器里现量，量不到用出图时估的值。
+ * MUST 先挡住被筛掉的标注——它带着 display:none，Firefox 对这种元素调 getBBox()
+ * 直接抛 NS_ERROR_FAILURE（可选链拦不住抛出），整个重画会断在这里、连线也不再跟随。
+ */
+function labelSize(element, key, rules) {
+  const measured = element.classList?.contains('is-hidden') ? null : element.getBBox?.();
+  if (measured && measured.width > 0) return { w: measured.width, h: measured.height };
+  return rules.sizes[key] || { w: 0, h: 0 };
 }
 
 function redrawEdges() {
   const nodes = new Map([...document.querySelectorAll('.topo-node')].map((el) => [el.dataset.nodeId, el]));
-  const boxes = new Map();
-  const boxOfNode = (id) => {
-    if (!boxes.has(id)) boxes.set(id, boxOf(nodes.get(id)));
-    return boxes.get(id);
-  };
+  // 一次把**全部**方块量出来：没连任何边的方块照样挡视线，标注 MUST 躲它。
+  // 只量连了边的那些，等于让出图侧和页面侧的障碍物集合不一样，退让结果就对不上。
+  const boxes = new Map([...nodes].map(([id, element]) => [id, boxOf(element)]));
+  const boxOfNode = (id) => boxes.get(id);
   // 一条边在 DOM 里有两个 path（画出来那条 + 加宽的点击区），它们共用一个 data-edge-id。
   // 分槽按「边」算，MUST NOT 按 path 算——按 path 算等于每条边都被数了两遍，接点会摊开一倍。
   const plans = new Map();
@@ -270,14 +356,28 @@ function redrawEdges() {
     });
   }
   assignAnchors([...plans.values()]);
+  const rules = labelRules();
+  // 标注要躲的是**看不清**：方块会把它整个盖住，别的标注会跟它糊在一起。
+  // 分堆的框 MUST NOT 算障碍物——堆内的线整条都在自己框里，把框当障碍就无处可放。
+  // 这一条与出图时同源（layout.mjs 的 obstacles 也只收方块 + 已放的标注）。
+  const obstacles = [...boxes.values()];
   for (const plan of plans.values()) {
     const geometry = routeEdge(plan.tail.point, plan.head.point, plan.fromSide);
     for (const path of plan.paths) path.setAttribute('d', geometry.d);
-    const label = document.querySelector(`#view-overview text[data-edge-id="${CSS.escape(plan.key)}"]`);
-    if (label) {
-      label.setAttribute('x', geometry.labelX);
-      label.setAttribute('y', geometry.labelY);
-    }
+    // 靠 data-label-for 认这行字。MUST NOT 用 data-edge-id——标注身上没有那个属性
+    // （它标的是「连线浮层的入口」，标注不是入口），按它找永远是 null，
+    // 线跟着拖走了、字却留在原地。
+    const label = document.querySelector(
+      `#view-overview text[data-label-for="${CSS.escape(plan.key)}"]`);
+    if (!label) continue;
+    // 被筛掉的字看不见：不参与退让，也 MUST NOT 当成障碍——让看得见的字去绕开
+    // 一行看不见的字，只会把它白白推远。取消筛选时 syncFilters 会再触发一次重画。
+    if (label.classList?.contains('is-hidden')) continue;
+    const size = labelSize(label, plan.key, rules);
+    const placed = placeLabel(geometry, size, obstacles, rules);
+    obstacles.push(labelBox(placed.point, size));
+    label.setAttribute('x', round(placed.point.x));
+    label.setAttribute('y', round(placed.point.y));
   }
 }
 
@@ -499,7 +599,8 @@ document.addEventListener('click', (event) => {
       || readData()?.ui?.detail || '');
     return;
   }
-  // 点一条线 MUST 能看到它的详情（FR-026）——线本身、加宽的点击区、线上的标注都算。
+  // 点一条线 MUST 能看到它的详情（FR-026）——线本身与加宽的点击区都算。
+  // 线上的标注**不算**：它是信息高亮的触发点，身上只有定位用的 data-label-for。
   const edge = event.target.closest('[data-edge-id]');
   if (edge) {
     const detail = document.querySelector(`[data-edge-detail="${CSS.escape(edge.dataset.edgeId)}"]`);

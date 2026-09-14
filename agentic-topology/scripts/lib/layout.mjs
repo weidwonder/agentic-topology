@@ -322,34 +322,40 @@ function labelBox(point, size) {
 // 标注可以落在线上的哪些位置：沿线取一串 t，每个 t 再往法线两侧一格格挪。
 // 只试中点那一列位置是不够的——密集区里中点附近整条走廊都被卡片和别人的标注占满，
 // 沿线挪开一点往往就有地方，退回原点被卡片盖住是最差的结果。
-const LABEL_T_VALUES = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82, 0.12, 0.88, 0.08, 0.92];
-// 最远只挪到 96px：再远就认不出这行字是哪条线的了，那还不如老实报一条 warning。
-const LABEL_OFFSET_STEP = 8;
-const LABEL_OFFSET_STEPS = 12;
+// 这几个数**一个都不许在 app.js 里重写**：它们随出图注入页面，两边读同一份。
+const LABEL = {
+  T_VALUES: [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82, 0.12, 0.88, 0.08, 0.92],
+  // 最远只挪到 96px（8 × 12）：再远就认不出这行字是哪条线的了，那还不如老实报一条 warning。
+  STEP: 8,
+  STEPS: 12,
+  // 挑位置时「离中点多远」折算成多少代价：越靠中点越好看，先试代价小的。
+  COST_T_WEIGHT: 120,
+  // 求法线时往前后各探这么一点，用来取切线方向。
+  NORMAL_DELTA: 0.01,
+};
 
 /** 曲线上某点的法线：用邻近两点的切线求，这样弯的地方也是真的「垂直于线」让开。 */
-function normalAt(geometry, t) {
-  const delta = 0.01;
-  const before = geometry.point(Math.max(0, t - delta));
-  const after = geometry.point(Math.min(1, t + delta));
+function normalAt(geometry, t, rules = LABEL) {
+  const before = geometry.point(Math.max(0, t - rules.NORMAL_DELTA));
+  const after = geometry.point(Math.min(1, t + rules.NORMAL_DELTA));
   const dx = after.x - before.x;
   const dy = after.y - before.y;
   const length = Math.hypot(dx, dy) || 1;
   return { x: -dy / length, y: dx / length };
 }
 
-function labelCandidates(geometry) {
+function labelCandidates(geometry, rules = LABEL) {
   const candidates = [];
-  for (const t of LABEL_T_VALUES) {
+  for (const t of rules.T_VALUES) {
     const base = geometry.point(t);
-    const normal = normalAt(geometry, t);
-    for (let step = 0; step <= LABEL_OFFSET_STEPS; step += 1) {
-      const distances = step === 0 ? [0] : [step * LABEL_OFFSET_STEP, -step * LABEL_OFFSET_STEP];
+    const normal = normalAt(geometry, t, rules);
+    for (let step = 0; step <= rules.STEPS; step += 1) {
+      const distances = step === 0 ? [0] : [step * rules.STEP, -step * rules.STEP];
       for (const distance of distances) {
         candidates.push({
           point: { x: base.x + normal.x * distance, y: base.y + normal.y * distance },
           // 越靠中点、离线越近越好看，先试代价小的
-          cost: Math.abs(distance) + 120 * Math.abs(t - 0.5),
+          cost: Math.abs(distance) + rules.COST_T_WEIGHT * Math.abs(t - 0.5),
         });
       }
     }
@@ -357,14 +363,26 @@ function labelCandidates(geometry) {
   return candidates.sort((a, b) => a.cost - b.cost);
 }
 
-function placeLabel(geometry, size, obstacles, warnings, edge) {
+/** 纯函数：挑第一个不压到任何障碍物的位置，一个都挑不到就退回线中点。 */
+function placeLabel(geometry, size, obstacles, rules = LABEL) {
   const fits = (point) => !obstacles.some((obstacle) => intersects(labelBox(point, size), obstacle));
-  for (const candidate of labelCandidates(geometry)) {
+  for (const candidate of labelCandidates(geometry, rules)) {
     if (fits(candidate.point)) return { point: candidate.point, unresolved: false };
   }
-  warnings.push(`layout: label overlap at edge ${edge.from}->${edge.to}`);
   return { point: geometry.point(0.5), unresolved: true };
 }
+
+// 拖动之后标注由 app.js 在浏览器里重新退让，那份实现是这一套的**逐字副本**，
+// 改这边 MUST 同改那边。参数经 topology-data.labelLayout 注入，五个函数由
+// tests/edges.test.mjs 的「两份退让逐个函数同解」逐个钉住。
+export const EDGE_LABEL = {
+  ...LABEL,
+  box: labelBox,
+  hits: intersects,
+  normalAt,
+  candidates: labelCandidates,
+  place: placeLabel,
+};
 
 /** 根据拓扑描述计算确定性的分组、节点、连线与标签布局。 */
 export function layout(data, { lang = 'zh' } = {}) {
@@ -457,7 +475,8 @@ export function layout(data, { lang = 'zh' } = {}) {
     const label = edgeLabel(edge, infoById, lang);
     const labelParts = edgeLabelParts(edge, infoById, lang);
     const size = measureLabel(label);
-    const placed = placeLabel(geometry, size, obstacles, warnings, edge);
+    const placed = placeLabel(geometry, size, obstacles);
+    if (placed.unresolved) warnings.push(`layout: label overlap at edge ${edge.from}->${edge.to}`);
     obstacles.push(labelBox(placed.point, size));
     edges.push({
       from: edge.from,
