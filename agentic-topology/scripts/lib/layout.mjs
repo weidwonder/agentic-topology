@@ -13,14 +13,7 @@ const M = {
   GROUP_PAD_X: 24,
   GROUP_PAD_TOP: 26,
   STAGE_PAD: 32,
-  // 来回两条边（A→B 与 B→A）各自朝自己的法线让开这么多。两条边方向相反，法线也相反，
-  // 同号偏移正好把它们分到路径两侧，看得出是两条独立的线，而不是一条。
-  PAIR_OFFSET: 10,
 };
-
-// 拖动之后连线由 app.js 在浏览器里重算，那份几何规则 MUST 用同一个错开量，
-// 否则同一对来回边在出图时和拖过之后错开的距离不一样，看着像换了张图。
-export const EDGE_PAIR_OFFSET = M.PAIR_OFFSET;
 
 // 卡片高度是程序算好写进 style 的，浏览器不会替它长高：估矮一点文字就直接溢出下边界。
 // 所以逐段按 topo.css 里各自的字号与行高折算——name 12px/1.35、desc 10.5px/1.4，
@@ -207,93 +200,119 @@ function intersects(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-/**
- * 把整条走线沿弦的法线平移 separation，再封成带 d 与 point(t) 的走线。
- * 平移只取 anchorAxis 那一个方向：起终点是贴在卡片边框上的，另一个方向一挪就会
- * 离开边框——要么缩进卡片下面看不见，要么跟卡片之间空出一道缝，像断了一截。
- * 沿边框滑动则怎么挪都还在边上。这样投影后，弦越接近平行于边框（也就是来回两条线
- * 越容易叠在一起）让开得越足，弦本来就横穿边框时反而不用让——那种情形两条线本来就分得很开。
- */
-function buildGeometry({ start, end, c1, c2, anchorAxis }, separation) {
-  let a = start;
-  let b = end;
-  let p1 = c1;
-  let p2 = c2;
-  if (separation) {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const normal = { x: (-dy / length) * separation, y: (dx / length) * separation };
-    const shift = anchorAxis === 'x' ? { x: normal.x, y: 0 } : { x: 0, y: normal.y };
-    const move = (point) => (point ? { x: point.x + shift.x, y: point.y + shift.y } : point);
-    a = move(start);
-    b = move(end);
-    p1 = move(c1);
-    p2 = move(c2);
-  }
-  if (!p1) {
-    return { start: a, end: b, d: `M${pointKey(a)} L${pointKey(b)}`, point: (t) => ({
-      x: a.x + (b.x - a.x) * t,
-      y: a.y + (b.y - a.y) * t,
+/** 把起终点与控制点封成带 d 与 point(t) 的走线；没有控制点就是一条直线。 */
+function buildGeometry({ start, end, c1, c2 }) {
+  if (!c1) {
+    return { start, end, d: `M${pointKey(start)} L${pointKey(end)}`, point: (t) => ({
+      x: start.x + (end.x - start.x) * t,
+      y: start.y + (end.y - start.y) * t,
     }) };
   }
-  return { start: a, end: b, c1: p1, c2: p2,
-    d: `M${pointKey(a)} C${pointKey(p1)} ${pointKey(p2)} ${pointKey(b)}`,
-    point: (t) => cubicPoint(a, p1, p2, b, t) };
+  return { start, end, c1, c2,
+    d: `M${pointKey(start)} C${pointKey(c1)} ${pointKey(c2)} ${pointKey(end)}`,
+    point: (t) => cubicPoint(start, c1, c2, end, t) };
 }
 
-function pathGeometry(from, to, sourceGroup, targetGroup, separation = 0) {
+// 一个节点上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
+// 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按走线情形定「走哪条边框」（edgeShape），
+// 再把落在同一条边框上的接点沿这条边框排开（assignAnchors）。
+// 这两个常量与下面四个分槽函数（anchorRatio / anchorPoint / anchorSortKey / assignAnchors）
+// 在 assets/page-shell/app.js 里有一份逐字复制的副本，改这边 MUST 同改那边，否则拖动前后接点会跳；
+// 六个符号是否还同解由 tests/edges.test.mjs 的「同源」用例逐个钉住。
+const ANCHOR_PAD = 10;
+const ANCHOR_SLOT = 18;
+
+/** 同一条边框上第 index 个（共 count 个）接点落在这条边框的哪个比例位置。只有一条线时就是正中。 */
+function anchorRatio(index, count, length) {
+  if (count <= 1) return 0.5;
+  // 摊开的总宽不超过边框减掉两头留白；线少时按 ANCHOR_SLOT 收着排，免得两条线也摊成一把扇子。
+  const usable = Math.max(0, length - ANCHOR_PAD * 2);
+  const spacing = Math.min(ANCHOR_SLOT, usable / count);
+  return 0.5 + ((index - (count - 1) / 2) * spacing) / length;
+}
+
+/** 比例位置换成边框线上的实际坐标：接点永远贴在边框上，既不进卡片也不出卡片。 */
+function anchorPoint(box, side, ratio) {
+  if (side === 'top') return { x: box.x + box.w * ratio, y: box.y };
+  if (side === 'bottom') return { x: box.x + box.w * ratio, y: box.y + box.h };
+  if (side === 'left') return { x: box.x, y: box.y + box.h * ratio };
+  return { x: box.x + box.w, y: box.y + box.h * ratio };
+}
+
+/** 同一条边框上谁排前面：看对端在哪边。对端靠上的线接点也靠上，线就不用互相穿过去。 */
+function anchorSortKey(side, other) {
+  return side === 'left' || side === 'right' ? other.y + other.h / 2 : other.x + other.w / 2;
+}
+
+/**
+ * 一次算完整张图的接点：按「节点 + 哪条边框」归堆，堆内按对端方位排序，再沿边框均分。
+ * 排序 MUST 有确定的 tie-break（这里用边的键 + 是首端还是尾端），
+ * 否则同一份描述两次出图排出来的顺序可能不一样，图就不是确定性的了。
+ */
+function assignAnchors(plans) {
+  const bySide = new Map();
+  for (const plan of plans) {
+    for (const endpoint of [plan.tail, plan.head]) {
+      const key = `${endpoint.nodeId}\u0000${endpoint.side}`;
+      if (!bySide.has(key)) bySide.set(key, []);
+      bySide.get(key).push(endpoint);
+    }
+  }
+  for (const endpoints of bySide.values()) {
+    endpoints.sort((a, b) => (a.sortKey - b.sortKey)
+      || (a.tieBreak < b.tieBreak ? -1 : a.tieBreak > b.tieBreak ? 1 : 0));
+    // 同一桶里的端点按定义就是同一个节点的同一条边框，box 取第一个即可，下面一路用它。
+    const { box, side } = endpoints[0];
+    const length = side === 'left' || side === 'right' ? box.h : box.w;
+    endpoints.forEach((endpoint, index) => {
+      endpoint.point = anchorPoint(box, side, anchorRatio(index, endpoints.length, length));
+    });
+  }
+}
+
+// 拖动之后连线由 app.js 在浏览器里重算，那份几何规则里有一份逐字复制的分槽副本。
+// 整套都导出来，是为了让测试逐个函数钉住两边同解——只钉常量不够：
+// 排序取反或 tie-break 变了，画出来的接点集合还是那几个，只是顺序悄悄错位，测不出来。
+export const EDGE_ANCHOR = {
+  PAD: ANCHOR_PAD,
+  SLOT: ANCHOR_SLOT,
+  ratio: anchorRatio,
+  point: anchorPoint,
+  sortKey: anchorSortKey,
+  assign: assignAnchors,
+};
+
+/** 五种走线情形各走哪条边框。这里只定「从哪条边出去、从哪条边进来」，具体落点交给分槽器。 */
+function edgeShape(from, to, sourceGroup, targetGroup) {
   const sameColumn = sourceGroup.col === targetGroup.col;
-  if (sameColumn && to.row === from.row + 1) {
-    return buildGeometry({
-      start: { x: from.x + from.w / 2, y: from.y + from.h },
-      end: { x: to.x + to.w / 2, y: to.y },
-      anchorAxis: 'x',
-    }, separation);
-  }
-  if (sameColumn && to.row > from.row + 1) {
-    const start = { x: from.x + from.w / 2, y: from.y + from.h };
-    const end = { x: to.x + to.w / 2, y: to.y };
-    return buildGeometry({
-      start,
-      end,
+  if (sameColumn && to.row === from.row + 1) return { shape: 'adjacent', fromSide: 'bottom', toSide: 'top' };
+  if (sameColumn && to.row > from.row + 1) return { shape: 'skip', fromSide: 'bottom', toSide: 'top' };
+  if (sameColumn) return { shape: 'loopback', fromSide: 'left', toSide: 'left' };
+  if (targetGroup.col > sourceGroup.col) return { shape: 'forward', fromSide: 'right', toSide: 'left' };
+  return { shape: 'backward', fromSide: 'top', toSide: 'top' };
+}
+
+function pathGeometry(shape, start, end) {
+  if (shape === 'adjacent') return buildGeometry({ start, end });
+  if (shape === 'skip') {
+    return buildGeometry({ start, end,
       c1: { x: start.x + 40, y: start.y + 30 },
-      c2: { x: end.x + 40, y: end.y - 30 },
-      anchorAxis: 'x',
-    }, separation);
+      c2: { x: end.x + 40, y: end.y - 30 } });
   }
-  if (sameColumn) {
-    const start = { x: from.x, y: from.y + from.h / 2 };
-    const end = { x: to.x, y: to.y + to.h / 2 };
-    return buildGeometry({
-      start,
-      end,
+  if (shape === 'loopback') {
+    return buildGeometry({ start, end,
       c1: { x: start.x - 56, y: start.y + 16 },
-      c2: { x: end.x - 56, y: end.y - 16 },
-      anchorAxis: 'y',
-    }, separation);
+      c2: { x: end.x - 56, y: end.y - 16 } });
   }
-  if (targetGroup.col > sourceGroup.col) {
-    const start = { x: from.x + from.w, y: from.y + from.h / 2 };
-    const end = { x: to.x, y: to.y + to.h / 2 };
+  if (shape === 'forward') {
     const offset = M.COL_GAP * 0.45;
-    return buildGeometry({
-      start,
-      end,
+    return buildGeometry({ start, end,
       c1: { x: start.x + offset, y: start.y },
-      c2: { x: end.x - offset, y: end.y },
-      anchorAxis: 'y',
-    }, separation);
+      c2: { x: end.x - offset, y: end.y } });
   }
-  const start = { x: from.x + from.w / 2, y: from.y };
-  const end = { x: to.x + to.w / 2, y: to.y };
-  return buildGeometry({
-    start,
-    end,
+  return buildGeometry({ start, end,
     c1: { x: start.x, y: start.y - M.ROW_GAP },
-    c2: { x: end.x, y: end.y - M.ROW_GAP },
-    anchorAxis: 'x',
-  }, separation);
+    c2: { x: end.x, y: end.y - M.ROW_GAP } });
 }
 
 function labelBox(point, size) {
@@ -410,16 +429,30 @@ export function layout(data, { lang = 'zh' } = {}) {
   // 结果是每条标注都退让失败、退回原点，反而比不退让更糟。分组框在最底层，
   // 标注压在它上面照样完整可辨（CSS 的 z-index + 标注自带描边光晕）。
   const obstacles = [...nodes.values()];
-  const edgeKeys = new Set(sourceEdges.map((item) => `${item.from}->${item.to}`));
-  const edges = [];
+  // 接点 MUST 先按全图算完再逐条画：一条边的落点取决于同一条边框上还挂着几条线，
+  // 边画边算是算不出来的。
+  const plans = [];
   for (const edge of sourceEdges) {
     const from = nodes.get(edge.from);
     const to = nodes.get(edge.to);
     if (!from || !to) continue;
     const sourceGroup = [...groupById.values()].find((group) => group.col === from.col);
     const targetGroup = [...groupById.values()].find((group) => group.col === to.col);
-    const paired = edge.from !== edge.to && edgeKeys.has(`${edge.to}->${edge.from}`);
-    const geometry = pathGeometry(from, to, sourceGroup, targetGroup, paired ? M.PAIR_OFFSET : 0);
+    const { shape, fromSide, toSide } = edgeShape(from, to, sourceGroup, targetGroup);
+    const key = `${edge.from}->${edge.to}`;
+    plans.push({
+      edge,
+      shape,
+      tail: { nodeId: edge.from, side: fromSide, box: from,
+        sortKey: anchorSortKey(fromSide, to), tieBreak: `${key}#tail` },
+      head: { nodeId: edge.to, side: toSide, box: to,
+        sortKey: anchorSortKey(toSide, from), tieBreak: `${key}#head` },
+    });
+  }
+  assignAnchors(plans);
+  const edges = [];
+  for (const { edge, shape, tail, head } of plans) {
+    const geometry = pathGeometry(shape, tail.point, head.point);
     // 线上写的是「这条线传的是哪几份信息」；什么情况下走这条线移进了浮层。
     const label = edgeLabel(edge, infoById, lang);
     const labelParts = edgeLabelParts(edge, infoById, lang);

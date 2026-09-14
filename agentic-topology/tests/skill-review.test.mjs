@@ -172,6 +172,38 @@ test('禁止清单把两条新的 MUST NOT 收进去了', () => {
   assert.match(forbidden, /为了让链路看起来顺/);
 });
 
+// 规则只写在一处、没人指过去，等于没立——模型不会为了写一句职责去通读整份纪律。
+test('描述性文字的写法立了规则，且三处入口都指得到', () => {
+  const 纪律 = readFileSync('references/抽取纪律.md', 'utf8');
+  const 节 = 纪律.slice(纪律.indexOf('## 3bis.'), 纪律.indexOf('## 4.'));
+  assert.ok(节.length > 0, '抽取纪律里没有 §3bis');
+  assert.match(节, /没看过这个项目代码的人/, '没写清读者是谁');
+  assert.match(节, /一句话只说一件事/, '缺"一句一件事"');
+  assert.match(节, /先说干什么再说怎么干/, '缺"先说干什么"');
+  assert.match(节, /MUST NOT 只甩名词/, '缺"真实名词前面要有人话"');
+  assert.match(节, /处理、管理、相关逻辑/, '缺"说了等于没说的词"清单');
+  assert.match(节, /别这么写 \| 这么写/, '缺正反对照表——只讲道理不给例子，模型照样写黑话');
+  assert.match(节, /MUST NOT 拿它牺牲准确/, '缺"说人话不等于含糊"的反向约束');
+
+  // 入口 MUST 按位置查：全文 match 挡不住「把入口搬走、在别处留三个字」——
+  // 模型读的是第 3 步和字段行，不是整份文件。
+  const skill = readFileSync('SKILL.md', 'utf8');
+  const 第三步 = skill.slice(skill.indexOf('### 第 3 步'), skill.indexOf('### 第 4 步'));
+  assert.match(第三步, /§3bis/, 'SKILL.md 第 3 步没指向 §3bis');
+
+  const 格式 = readFileSync('references/编排描述格式.md', 'utf8');
+  assert.match(格式, /§3bis/, '格式契约没指向 §3bis');
+  // 五个描述性字段各自那一行 MUST 自己带指向：模型是照着字段表逐行填的。
+  for (const 字段 of ['responsibility', 'inputs', 'outputs', 'purpose', 'condition']) {
+    const 行 = 格式.split('\n').filter((l) => l.startsWith(`| \`${字段}\``));
+    assert.ok(行.length > 0, `格式契约里找不到 ${字段} 这一行`);
+    assert.ok(行.some((l) => /§3bis|说人话/.test(l)),
+      `格式契约的 ${字段} 行没指向 §3bis——模型填这一格时看不到写法规则`);
+  }
+
+  assert.match(纪律.slice(纪律.indexOf('## 8.')), /§3bis/, '收尾自查清单没把这条收进去');
+});
+
 test('抽取回归样本齐备：目标项目、人工标注的期望清单、跑过一次的记录', () => {
   const base = 'tests/fixtures/extraction-regression';
   for (const file of ['expected.md', 'last-run.md', 'project/src/intake.ts',
