@@ -146,6 +146,9 @@ function boxOf(element) {
   };
 }
 
+// 坐标一律留一位小数：出图侧 layout.mjs 的 round() 同口径，免得同一条线两边写法不同。
+const round = (value) => Math.round(value * 10) / 10;
+
 // 一个方块上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
 // 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按两个方块的相对位置定「走哪条边框」，
 // 再把落在同一条边框上的接点沿这条边框排开。
@@ -247,14 +250,20 @@ function routeEdge(start, end, fromSide) {
 // ---- 标注退让 --------------------------------------------------------------
 // 出图时 layout.mjs 会把每行字推开去躲卡片和别人的标注；拖动之后这里得重来一遍，
 // 否则一次重画就把那套排布全抹平、所有字落回线中点糊成一团。
-// 退让参数**不在这里写死**：出图时随 topology-data 一起注入（唯一真相在 layout.mjs），
-// 这样两边的退让力度永远一致，MUST NOT 在这里另起一套数字。
+//
+// 下面五个函数是 scripts/lib/layout.mjs 那一套的**逐字副本**，改这边 MUST 同改那边；
+// 是否还同解由 tests/edges.test.mjs 的「两份退让逐个函数同解」逐个钉住。
+// 参数**一个都不许写在这里**：出图时随 topology-data.labelLayout 注入（唯一真相在
+// layout.mjs 的 LABEL）。拿不到就整体退化成「不退让」，MUST NOT 在这里补默认数字——
+// 补一个就是第二份真相，而且和那边不一致时谁都不会发现。
 function labelRules() {
   const rules = readData()?.labelLayout;
   return {
-    tValues: rules?.T_VALUES || [0.5],
-    step: rules?.STEP || 8,
-    steps: rules?.STEPS || 0,
+    T_VALUES: rules?.T_VALUES || [0.5],
+    STEP: rules?.STEP ?? 0,
+    STEPS: rules?.STEPS ?? 0,
+    COST_T_WEIGHT: rules?.COST_T_WEIGHT ?? 0,
+    NORMAL_DELTA: rules?.NORMAL_DELTA ?? 0.01,
     sizes: rules?.sizes || {},
   };
 }
@@ -263,14 +272,14 @@ function labelBox(point, size) {
   return { x: point.x - size.w / 2, y: point.y - size.h / 2, w: size.w, h: size.h };
 }
 
-function overlaps(a, b) {
+function intersects(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 /** 曲线上某点的法线：用邻近两点的切线求，弯的地方也是真的「垂直于线」让开。 */
-function normalAt(geometry, t) {
-  const before = geometry.point(Math.max(0, t - 0.01));
-  const after = geometry.point(Math.min(1, t + 0.01));
+function normalAt(geometry, t, rules) {
+  const before = geometry.point(Math.max(0, t - rules.NORMAL_DELTA));
+  const after = geometry.point(Math.min(1, t + rules.NORMAL_DELTA));
   const dx = after.x - before.x;
   const dy = after.y - before.y;
   const length = Math.hypot(dx, dy) || 1;
@@ -280,15 +289,15 @@ function normalAt(geometry, t) {
 /** 沿线取一串 t、每个 t 再往法线两侧一格格挪；越靠中点、离线越近的越先试。 */
 function labelCandidates(geometry, rules) {
   const candidates = [];
-  for (const t of rules.tValues) {
+  for (const t of rules.T_VALUES) {
     const base = geometry.point(t);
-    const normal = normalAt(geometry, t);
-    for (let step = 0; step <= rules.steps; step += 1) {
-      const distances = step === 0 ? [0] : [step * rules.step, -step * rules.step];
+    const normal = normalAt(geometry, t, rules);
+    for (let step = 0; step <= rules.STEPS; step += 1) {
+      const distances = step === 0 ? [0] : [step * rules.STEP, -step * rules.STEP];
       for (const distance of distances) {
         candidates.push({
           point: { x: base.x + normal.x * distance, y: base.y + normal.y * distance },
-          cost: Math.abs(distance) + 120 * Math.abs(t - 0.5),
+          cost: Math.abs(distance) + rules.COST_T_WEIGHT * Math.abs(t - 0.5),
         });
       }
     }
@@ -298,27 +307,30 @@ function labelCandidates(geometry, rules) {
 
 /** 挑第一个不压到任何障碍物的位置；一个都挑不到就退回线中点（和出图时同一个兜底）。 */
 function placeLabel(geometry, size, obstacles, rules) {
+  const fits = (point) => !obstacles.some((obstacle) => intersects(labelBox(point, size), obstacle));
   for (const candidate of labelCandidates(geometry, rules)) {
-    const box = labelBox(candidate.point, size);
-    if (!obstacles.some((obstacle) => overlaps(box, obstacle))) return candidate.point;
+    if (fits(candidate.point)) return { point: candidate.point, unresolved: false };
   }
-  return geometry.point(0.5);
+  return { point: geometry.point(0.5), unresolved: true };
 }
 
-/** 这行字占多大：优先在浏览器里现量，量不到（无 getBBox 的环境）用出图时估的值。 */
+/**
+ * 这行字占多大：优先在浏览器里现量，量不到用出图时估的值。
+ * MUST 先挡住被筛掉的标注——它带着 display:none，Firefox 对这种元素调 getBBox()
+ * 直接抛 NS_ERROR_FAILURE（可选链拦不住抛出），整个重画会断在这里、连线也不再跟随。
+ */
 function labelSize(element, key, rules) {
-  const measured = element?.getBBox?.();
+  const measured = element.classList?.contains('is-hidden') ? null : element.getBBox?.();
   if (measured && measured.width > 0) return { w: measured.width, h: measured.height };
   return rules.sizes[key] || { w: 0, h: 0 };
 }
 
 function redrawEdges() {
   const nodes = new Map([...document.querySelectorAll('.topo-node')].map((el) => [el.dataset.nodeId, el]));
-  const boxes = new Map();
-  const boxOfNode = (id) => {
-    if (!boxes.has(id)) boxes.set(id, boxOf(nodes.get(id)));
-    return boxes.get(id);
-  };
+  // 一次把**全部**方块量出来：没连任何边的方块照样挡视线，标注 MUST 躲它。
+  // 只量连了边的那些，等于让出图侧和页面侧的障碍物集合不一样，退让结果就对不上。
+  const boxes = new Map([...nodes].map(([id, element]) => [id, boxOf(element)]));
+  const boxOfNode = (id) => boxes.get(id);
   // 一条边在 DOM 里有两个 path（画出来那条 + 加宽的点击区），它们共用一个 data-edge-id。
   // 分槽按「边」算，MUST NOT 按 path 算——按 path 算等于每条边都被数了两遍，接点会摊开一倍。
   const plans = new Map();
@@ -358,12 +370,14 @@ function redrawEdges() {
     const label = document.querySelector(
       `#view-overview text[data-label-for="${CSS.escape(plan.key)}"]`);
     if (!label) continue;
+    // 被筛掉的字看不见：不参与退让，也 MUST NOT 当成障碍——让看得见的字去绕开
+    // 一行看不见的字，只会把它白白推远。取消筛选时 syncFilters 会再触发一次重画。
+    if (label.classList?.contains('is-hidden')) continue;
     const size = labelSize(label, plan.key, rules);
-    const point = placeLabel(geometry, size, obstacles, rules);
-    obstacles.push(labelBox(point, size));
-    const round = (value) => Math.round(value * 10) / 10;
-    label.setAttribute('x', round(point.x));
-    label.setAttribute('y', round(point.y));
+    const placed = placeLabel(geometry, size, obstacles, rules);
+    obstacles.push(labelBox(placed.point, size));
+    label.setAttribute('x', round(placed.point.x));
+    label.setAttribute('y', round(placed.point.y));
   }
 }
 

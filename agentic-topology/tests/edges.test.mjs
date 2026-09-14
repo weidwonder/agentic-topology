@@ -454,6 +454,91 @@ test('重画之后标注 MUST 重新退让：不压方块、不互相糊', () =>
   }
 });
 
+// 障碍物 MUST 是**全部**方块，不只是连了边的那些。
+// 曾经按边的两端懒填：一个谁也不连的方块就不在障碍里，标注大大方方压上去。
+// 这种图形状完全合法——tests/fixtures/parse-full.topology.yaml 就有 5 个无边节点。
+test('退让 MUST 躲开没连任何边的方块', () => {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/)[0];
+  const 方块 = (id, x, y) => ({ dataset: { nodeId: id }, style: { left: `${x}px`, top: `${y}px` },
+    offsetWidth: 184, offsetHeight: 90 });
+  // 甲 →(一条横线)→ 乙；孤零零那个正坐在这条线中间，谁也不连。
+  const 孤 = { x: 300, y: 0, w: 184, h: 90 };
+  const 方块们 = [方块('A', 0, 0), 方块('B', 600, 0), 方块('ISO', 孤.x, 孤.y)];
+  const 线们 = [0, 1].map(() => ({ dataset: { edgeId: 'A->B' }, d: null,
+    setAttribute(n, v) { if (n === 'd') this.d = v; } }));
+  const 尺寸 = { w: 80, h: 16 };
+  const 标注 = { dataset: { labelFor: 'A->B' }, attrs: { x: '0', y: '0' },
+    classList: { contains: () => false },
+    setAttribute(name, value) { this.attrs[name] = String(value); } };
+
+  new Function('document', 'CSS', 'readData', `${source}\nreturn redrawEdges;`)({
+    querySelectorAll: (sel) => (sel.includes('.topo-node') ? 方块们 : 线们),
+    querySelector: (sel) => (/text\[data-label-for="A->B"\]/.test(sel) ? 标注 : null),
+  }, { escape: (v) => v },
+  () => ({ labelLayout: { ...EDGE_LABEL, sizes: { 'A->B': 尺寸 } } }))();
+
+  const 框 = EDGE_LABEL.box({ x: Number(标注.attrs.x), y: Number(标注.attrs.y) }, 尺寸);
+  assert.equal(EDGE_LABEL.hits(框, 孤), false,
+    `标注落在 (${标注.attrs.x},${标注.attrs.y})，正压在那个没连边的方块上——`
+    + '障碍物只收了连边的方块');
+});
+
+/** 把 app.js 里那段退让抠出来跑——和分槽那段同一个办法，它不是模块，只能按文本取。 */
+function 取浏览器退让() {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function labelRules\(\)[\s\S]*?\nfunction labelSize\([\s\S]*?\n}\n/);
+  assert.ok(source, 'app.js 里找不到 labelRules..labelSize 这一段');
+  return new Function('readData', `${source[0]}\nreturn { labelBox, intersects, normalAt,`
+    + ' labelCandidates, placeLabel, labelRules };')(() => ({ labelLayout: { ...EDGE_LABEL } }));
+}
+
+// 退让是**两份逐字复制的实现**：出图一份、拖动后浏览器里一份。
+// 只断言「退让有效果」是不够的——两份悄悄漂移时效果还在，只是两边不一样了，
+// 拖一下排布就变样。所以逐个函数比对同解，和分槽那套一个规矩。
+test('两份退让逐个函数同解：盒、相交、法线、候选位、落位', () => {
+  const 浏 = 取浏览器退让();
+  const 线 = { point: (t) => ({ x: 100 + 300 * t, y: 200 + 120 * t * t }) };
+  const 尺寸 = { w: 80, h: 16 };
+
+  for (const p of [{ x: 0, y: 0 }, { x: 37.5, y: -12 }, { x: -400, y: 900 }])
+    assert.deepEqual(浏.labelBox(p, 尺寸), EDGE_LABEL.box(p, 尺寸), `labelBox 在 ${JSON.stringify(p)} 上对不上`);
+
+  const 框 = [{ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 }, { x: 20, y: 20, w: 1, h: 1 }];
+  for (const a of 框) for (const b of 框)
+    assert.equal(浏.intersects(a, b), EDGE_LABEL.hits(a, b), 'intersects 判定对不上');
+
+  for (const t of [0, 0.25, 0.5, 0.75, 1])
+    assert.deepEqual(浏.normalAt(线, t, EDGE_LABEL), EDGE_LABEL.normalAt(线, t),
+      `normalAt 在 t=${t} 上对不上——法线方向不同，两边会往相反方向让`);
+
+  assert.deepEqual(浏.labelCandidates(线, EDGE_LABEL), EDGE_LABEL.candidates(线),
+    '候选位序列对不上——试的位置或先后不同，挑出来的落位就会不同');
+
+  for (const 障碍 of [[], [{ x: 150, y: 190, w: 200, h: 80 }], 框])
+    assert.deepEqual(浏.placeLabel(线, 尺寸, 障碍, EDGE_LABEL), EDGE_LABEL.place(线, 尺寸, 障碍),
+      '同样的障碍物下两边挑出的位置不同');
+});
+
+// 参数只有一份真相（layout.mjs 的 LABEL，经 topology-data 注入）。
+// 有人图省事在 app.js 里补个默认值，两边就悄悄分家了——而且补的那次一定是绿的。
+test('app.js MUST NOT 自带退让参数：拿不到注入就整体不退让', () => {
+  const 浏 = 取浏览器退让();
+  const 空 = new Function('readData',
+    `${readFileSync('assets/page-shell/app.js', 'utf8')
+      .match(/function labelRules\(\)[\s\S]*?\n}\n/)[0]}\nreturn labelRules;`)(() => null)();
+  assert.equal(空.STEPS, 0, '拿不到注入时 MUST 不退让');
+  assert.equal(空.STEP, 0, 'STEP 有自带默认值——那就是第二份真相，和 layout.mjs 不一致时没人会发现');
+  assert.equal(空.COST_T_WEIGHT, 0, 'COST_T_WEIGHT 有自带默认值');
+  assert.deepEqual(空.T_VALUES, [0.5], '拿不到注入时只该试线中点');
+
+  // 正面：拿得到注入时，每个数都等于 layout.mjs 那份
+  const 有 = 浏.labelRules();
+  for (const key of ['STEP', 'STEPS', 'COST_T_WEIGHT', 'NORMAL_DELTA'])
+    assert.equal(有[key], EDGE_LABEL[key], `${key} 与 layout.mjs 对不上`);
+  assert.deepEqual(有.T_VALUES, EDGE_LABEL.T_VALUES);
+});
+
 // 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
 // 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
 // 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。

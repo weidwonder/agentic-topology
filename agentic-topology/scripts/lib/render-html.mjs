@@ -675,7 +675,12 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
     // layout.mjs，MUST NOT 在 app.js 里另写一套）与每条线上那行字占多大。
     // 尺寸优先在浏览器里用 getBBox() 现量，量不到才退回这里出图时估的值。
     labelLayout: {
-      ...EDGE_LABEL,
+      // 只注入数字，函数不进 JSON（app.js 那边有自己的同名实现）。
+      T_VALUES: EDGE_LABEL.T_VALUES,
+      STEP: EDGE_LABEL.STEP,
+      STEPS: EDGE_LABEL.STEPS,
+      COST_T_WEIGHT: EDGE_LABEL.COST_T_WEIGHT,
+      NORMAL_DELTA: EDGE_LABEL.NORMAL_DELTA,
       sizes: Object.fromEntries((pageLayout.edges || [])
         .map((edge) => [`${edge.from}->${edge.to}`, { w: edge.labelW, h: edge.labelH }])),
     },
