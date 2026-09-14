@@ -28,6 +28,10 @@ function syncFilters() {
     element.classList.toggle('is-hidden', !visibleNodes.has(element.dataset.nodeId));
   for (const element of document.querySelectorAll('[data-edge-id]'))
     element.classList.toggle('is-hidden', !visibleEdges.has(element.dataset.edgeId));
+  // 线上标注身上没有 data-edge-id（它不是连线浮层的入口），所以上面那一轮收不到它。
+  // 漏了这一句，筛掉一条边、它那行字还留在图上——与「拖动后标注不跟随」同一个根因。
+  for (const element of document.querySelectorAll('[data-label-for]'))
+    element.classList.toggle('is-hidden', !visibleEdges.has(element.dataset.labelFor));
 }
 
 // ---- 高亮：这份东西流经哪几条线 --------------------------------------------
@@ -226,16 +230,86 @@ function routeEdge(start, end, fromSide) {
     ? { x: end.x - sign * offset, y: end.y }
     : { x: end.x, y: end.y - sign * offset };
   const round = (value) => Math.round(value * 10) / 10;
-  const mid = {
-    x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
-    y: (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8,
+  const point = (t) => {
+    const u = 1 - t;
+    return {
+      x: u ** 3 * start.x + 3 * u ** 2 * t * c1.x + 3 * u * t ** 2 * c2.x + t ** 3 * end.x,
+      y: u ** 3 * start.y + 3 * u ** 2 * t * c1.y + 3 * u * t ** 2 * c2.y + t ** 3 * end.y,
+    };
   };
   return {
     d: `M${round(start.x)},${round(start.y)} C${round(c1.x)},${round(c1.y)} ` +
       `${round(c2.x)},${round(c2.y)} ${round(end.x)},${round(end.y)}`,
-    labelX: round(mid.x),
-    labelY: round(mid.y),
+    point,
   };
+}
+
+// ---- 标注退让 --------------------------------------------------------------
+// 出图时 layout.mjs 会把每行字推开去躲卡片和别人的标注；拖动之后这里得重来一遍，
+// 否则一次重画就把那套排布全抹平、所有字落回线中点糊成一团。
+// 退让参数**不在这里写死**：出图时随 topology-data 一起注入（唯一真相在 layout.mjs），
+// 这样两边的退让力度永远一致，MUST NOT 在这里另起一套数字。
+function labelRules() {
+  const rules = readData()?.labelLayout;
+  return {
+    tValues: rules?.T_VALUES || [0.5],
+    step: rules?.STEP || 8,
+    steps: rules?.STEPS || 0,
+    sizes: rules?.sizes || {},
+  };
+}
+
+function labelBox(point, size) {
+  return { x: point.x - size.w / 2, y: point.y - size.h / 2, w: size.w, h: size.h };
+}
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/** 曲线上某点的法线：用邻近两点的切线求，弯的地方也是真的「垂直于线」让开。 */
+function normalAt(geometry, t) {
+  const before = geometry.point(Math.max(0, t - 0.01));
+  const after = geometry.point(Math.min(1, t + 0.01));
+  const dx = after.x - before.x;
+  const dy = after.y - before.y;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: -dy / length, y: dx / length };
+}
+
+/** 沿线取一串 t、每个 t 再往法线两侧一格格挪；越靠中点、离线越近的越先试。 */
+function labelCandidates(geometry, rules) {
+  const candidates = [];
+  for (const t of rules.tValues) {
+    const base = geometry.point(t);
+    const normal = normalAt(geometry, t);
+    for (let step = 0; step <= rules.steps; step += 1) {
+      const distances = step === 0 ? [0] : [step * rules.step, -step * rules.step];
+      for (const distance of distances) {
+        candidates.push({
+          point: { x: base.x + normal.x * distance, y: base.y + normal.y * distance },
+          cost: Math.abs(distance) + 120 * Math.abs(t - 0.5),
+        });
+      }
+    }
+  }
+  return candidates.sort((a, b) => a.cost - b.cost);
+}
+
+/** 挑第一个不压到任何障碍物的位置；一个都挑不到就退回线中点（和出图时同一个兜底）。 */
+function placeLabel(geometry, size, obstacles, rules) {
+  for (const candidate of labelCandidates(geometry, rules)) {
+    const box = labelBox(candidate.point, size);
+    if (!obstacles.some((obstacle) => overlaps(box, obstacle))) return candidate.point;
+  }
+  return geometry.point(0.5);
+}
+
+/** 这行字占多大：优先在浏览器里现量，量不到（无 getBBox 的环境）用出图时估的值。 */
+function labelSize(element, key, rules) {
+  const measured = element?.getBBox?.();
+  if (measured && measured.width > 0) return { w: measured.width, h: measured.height };
+  return rules.sizes[key] || { w: 0, h: 0 };
 }
 
 function redrawEdges() {
@@ -270,6 +344,11 @@ function redrawEdges() {
     });
   }
   assignAnchors([...plans.values()]);
+  const rules = labelRules();
+  // 标注要躲的是**看不清**：方块会把它整个盖住，别的标注会跟它糊在一起。
+  // 分堆的框 MUST NOT 算障碍物——堆内的线整条都在自己框里，把框当障碍就无处可放。
+  // 这一条与出图时同源（layout.mjs 的 obstacles 也只收方块 + 已放的标注）。
+  const obstacles = [...boxes.values()];
   for (const plan of plans.values()) {
     const geometry = routeEdge(plan.tail.point, plan.head.point, plan.fromSide);
     for (const path of plan.paths) path.setAttribute('d', geometry.d);
@@ -278,10 +357,13 @@ function redrawEdges() {
     // 线跟着拖走了、字却留在原地。
     const label = document.querySelector(
       `#view-overview text[data-label-for="${CSS.escape(plan.key)}"]`);
-    if (label) {
-      label.setAttribute('x', geometry.labelX);
-      label.setAttribute('y', geometry.labelY);
-    }
+    if (!label) continue;
+    const size = labelSize(label, plan.key, rules);
+    const point = placeLabel(geometry, size, obstacles, rules);
+    obstacles.push(labelBox(point, size));
+    const round = (value) => Math.round(value * 10) / 10;
+    label.setAttribute('x', round(point.x));
+    label.setAttribute('y', round(point.y));
   }
 }
 

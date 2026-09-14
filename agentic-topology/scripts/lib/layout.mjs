@@ -327,6 +327,14 @@ const LABEL_T_VALUES = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82, 0.1
 const LABEL_OFFSET_STEP = 8;
 const LABEL_OFFSET_STEPS = 12;
 
+// 拖动之后标注由 app.js 在浏览器里重新退让，那份实现读这里导出的参数，
+// MUST NOT 在 app.js 里另写一套数字——两边的退让力度不一样，拖一下排布就变了样。
+export const EDGE_LABEL = {
+  T_VALUES: LABEL_T_VALUES,
+  STEP: LABEL_OFFSET_STEP,
+  STEPS: LABEL_OFFSET_STEPS,
+};
+
 /** 曲线上某点的法线：用邻近两点的切线求，这样弯的地方也是真的「垂直于线」让开。 */
 function normalAt(geometry, t) {
   const delta = 0.01;

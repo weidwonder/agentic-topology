@@ -49,6 +49,48 @@ test('筛选不改坐标：applyFilter 不返回也不修改任何位置字段',
   assert.deepEqual(Object.keys(r).sort(), ['visibleEdgeKeys', 'visibleNodeIds']);
 });
 
+// 筛掉一条边，它线上那行字也 MUST 一起收起来。
+// 标注身上没有 data-edge-id（它不是连线浮层的入口），所以按那个属性收元素收不到它——
+// 2026-09-02 摘属性时漏的就是这一处与拖动重算那一处，两处同根因。
+test('筛掉一条边，它线上的标注也跟着收起来', () => {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function syncFilters\(\)[\s\S]*?\n}\n/);
+  assert.ok(source, 'app.js 里找不到 syncFilters');
+
+  const 元素 = (属性, 值) => ({ dataset: { [属性]: 值 }, classes: new Set(),
+    classList: { toggle(name, on) { if (on) this.owner.classes.add(name);
+      else this.owner.classes.delete(name); } } });
+  const 建 = (属性, 值) => { const e = 元素(属性, 值); e.classList.owner = e; return e; };
+
+  const 方块 = [建('nodeId', 'N1'), 建('nodeId', 'N2')];
+  const 线 = [建('edgeId', 'N1->N2')];
+  const 标注 = [建('labelFor', 'N1->N2')];
+  const doc = data(FX('three-confidence.topology.yaml'));
+
+  const 假document = {
+    getElementById: () => ({ textContent: JSON.stringify(doc) }),
+    querySelectorAll: (sel) => {
+      if (sel.includes('data-filter-dimension')) return [];       // 一个都没勾 → 全可见
+      if (sel.includes('data-node-id')) return 方块;
+      if (sel.includes('data-edge-id')) return 线;
+      if (sel.includes('data-label-for')) return 标注;
+      return [];
+    },
+  };
+  const 跑 = new Function('document', 'readData', 'applyFilter',
+    `${source[0]}\nreturn syncFilters;`);
+
+  // 造一次「这条边被筛掉」：applyFilter 换成只回一个空的可见集
+  跑(假document, () => doc, () => ({ visibleNodeIds: ['N1', 'N2'], visibleEdgeKeys: [] }))();
+  assert.ok(线[0].classes.has('is-hidden'), '前提：这条边确实被筛掉了');
+  assert.ok(标注[0].classes.has('is-hidden'),
+    '边被筛掉了，它线上那行字还留在图上——收元素时漏了 data-label-for');
+
+  // 再放回来：标注也要跟着回来，不能筛一次就永久消失
+  跑(假document, () => doc, () => ({ visibleNodeIds: ['N1', 'N2'], visibleEdgeKeys: ['N1->N2'] }))();
+  assert.equal(标注[0].classes.has('is-hidden'), false, '取消筛选后标注没放回来');
+});
+
 test('app.js 只有一份筛选判据：不得自己再判 confidence/kind/group', () => {
   const js = readFileSync('assets/page-shell/app.js', 'utf8');
   assert.match(js, /applyFilter/, 'app.js 必须调用 applyFilter');

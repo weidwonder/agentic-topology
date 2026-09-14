@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FX, data, intersects, renderOk, sect } from './helpers.mjs';
-import { layout, EDGE_ANCHOR } from '../scripts/lib/layout.mjs';
+import { FX, TMP, data, intersects, renderOk, sect } from './helpers.mjs';
+import { layout, EDGE_ANCHOR, EDGE_LABEL } from '../scripts/lib/layout.mjs';
 
 /** 把一条 d 均匀采样成一串点，用来量两条线离得有多远。 */
 function 采样(d, count = 60) {
@@ -313,10 +313,19 @@ function 跑一遍重画(节点们, 边键们, { 带标注 = false } = {}) {
     setAttribute(name, value) { this.attrs[name] = String(value); } };
   const 假document = {
     querySelectorAll: (selector) => (selector.includes('.topo-node') ? 方块们 : 线们),
-    querySelector: (selector) => (带标注 && /text\[data-label-for/.test(selector) ? 标注 : null),
+    // MUST 按**键**匹配：见到属性名就返回桩，等于替被测代码把键对上了，
+    // 键写错这条用例照样绿——那正是这次缺陷的形态。
+    querySelector: (selector) => {
+      if (!带标注) return null;
+      const m = selector.match(/text\[data-label-for="([^"]+)"\]/);
+      return m && m[1] === 标注.dataset.labelFor ? 标注 : null;
+    },
   };
-  new Function('document', 'CSS', `${source[0]}\nreturn redrawEdges;`)(
-    假document, { escape: (value) => value })();
+  // redrawEdges 要读内嵌数据里的退让参数（唯一真相在 layout.mjs），
+  // 抠出来的那段不含 readData，这里按真实形状喂一份进去。
+  const 假readData = () => ({ labelLayout: { ...EDGE_LABEL, sizes: {} } });
+  new Function('document', 'CSS', 'readData', `${source[0]}\nreturn redrawEdges;`)(
+    假document, { escape: (value) => value }, 假readData)();
   return 带标注 ? { 线们, 标注 } : 线们;
 }
 
@@ -339,9 +348,6 @@ test('重画时分槽按边算而不是按 path 算：一条边的两个 path �
     `接点间距 ${间距}，按 5 条边算应是 ${期望}——对不上说明把两个 path 当成了两条边`);
 });
 
-// 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
-// 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
-// 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。
 // 线拖走了、线上的材料标记留在原地——2026-09-02 把标注的 data-edge-id 摘掉时
 // （它不再是连线浮层的入口），漏改了重算那一处，它至今还按 data-edge-id 找这行字，
 // 永远找不到。所以这里钉的是两件事：出图产物带得出定位属性、重算按同一个属性找。
@@ -356,6 +362,15 @@ test('出图给线上标注留了定位属性，且不是 data-edge-id', () => {
     assert.doesNotMatch(attrs, /data-edge-id=/,
       '标注不许带 data-edge-id——点击派发按它认「连线浮层入口」，一次点击不能同时干两件事');
   }
+  // 只查属性名是不够的：名字对、键写错（比如写成 edge.from）运行时等于没修，
+  // 而那正是这次缺陷的形态——两边对不上。所以取值集合 MUST 与线的 edgeId 集合相等。
+  const 标注的键 = new Set([...html.matchAll(/<text class="topo-elabel" data-label-for="([^"]+)"/g)]
+    .map((m) => m[1]));
+  const 线的键 = new Set([...html.matchAll(/<path class="topo-edge[^"]*" data-edge-id="([^"]+)"/g)]
+    .map((m) => m[1]));
+  assert.deepEqual([...标注的键].sort(), [...线的键].sort(),
+    '标注的 data-label-for 取值与线的 data-edge-id 取值对不上——页面侧按边的键去找，找不到就不动');
+
   const app = readFileSync('assets/page-shell/app.js', 'utf8');
   assert.match(app, /text\[data-label-for=/,
     'app.js 没按 data-label-for 找标注——出图侧和重算侧用的属性 MUST 是同一个');
@@ -376,6 +391,72 @@ test('拖动后重算：线上标注 MUST 跟着线走', () => {
   assert.ok(y > 乙.y && y < 甲.y + 甲.h, `标注落在 y=${y}，离这条线太远`);
 });
 
+/**
+ * 在**真出图产物**上触发一次重画，量退让到底有没有起作用。
+ * 只断言「标注跟着走了」是不够的——跟着走了但全落在线中点、压在方块上，等于没修。
+ * 比的是同一张图跑两遍：把退让参数抹成「只试线中点」一遍，用真参数一遍。
+ */
+function 重画后量压叠(fixture, 要退让) {
+  const html = sect(renderOk(FX(fixture), `dodge-${fixture.replace(/[/.]/g, '-')}.html`), 'view-overview');
+  const 全文 = readFileSync(TMP(`dodge-${fixture.replace(/[/.]/g, '-')}.html`), 'utf8');
+  const 数据 = JSON.parse(全文.match(/id="topology-data">([\s\S]*?)<\/script>/)[1]
+    .replace(/<\\\//g, '</'));
+  const 反转义 = (t) => t.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+
+  const 方块框 = [];
+  const 方块们 = [...html.matchAll(/data-node-id="([^"]+)"[^>]*style="[^"]*left:\s*([\d.]+)px;\s*top:\s*([\d.]+)px[^"]*"/g)]
+    .map((m) => {
+      方块框.push({ x: Number(m[2]), y: Number(m[3]), w: 184, h: 90 });
+      return { dataset: { nodeId: 反转义(m[1]) }, style: { left: `${m[2]}px`, top: `${m[3]}px` },
+        offsetWidth: 184, offsetHeight: 90 };
+    });
+  const 线们 = [...html.matchAll(/<path class="topo-edge[^"]*" data-edge-id="([^"]+)"[^>]*?d="([^"]+)"/g)]
+    .map((m) => ({ dataset: { edgeId: 反转义(m[1]) }, d: m[2],
+      setAttribute(n, v) { if (n === 'd') this.d = v; } }));
+  const 标注们 = new Map();
+  for (const m of html.matchAll(/<text class="topo-elabel" data-label-for="([^"]+)" x="([^"]+)" y="([^"]+)"/g)) {
+    标注们.set(反转义(m[1]), { attrs: { x: m[2], y: m[3] },
+      setAttribute(n, v) { this.attrs[n] = String(v); } });
+  }
+
+  const 参数 = 要退让 ? 数据.labelLayout : { ...数据.labelLayout, T_VALUES: [0.5], STEPS: 0 };
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/)[0];
+  new Function('document', 'CSS', 'readData', `${source}\nreturn redrawEdges;`)({
+    querySelectorAll: (sel) => (sel.includes('.topo-node') ? 方块们 : 线们),
+    querySelector: (sel) => {
+      const m = sel.match(/text\[data-label-for="([^"]+)"\]/);
+      return m ? (标注们.get(m[1]) || null) : null;
+    },
+  }, { escape: (v) => v }, () => ({ labelLayout: 参数 }))();
+
+  const 尺寸 = 数据.labelLayout.sizes;
+  const 框 = [...标注们].map(([k, v]) => ({ x: Number(v.attrs.x) - 尺寸[k].w / 2,
+    y: Number(v.attrs.y) - 尺寸[k].h / 2, w: 尺寸[k].w, h: 尺寸[k].h }));
+  const 压 = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  let 互压 = 0;
+  for (let i = 0; i < 框.length; i += 1) {
+    for (let j = i + 1; j < 框.length; j += 1) if (压(框[i], 框[j])) 互压 += 1;
+  }
+  return { 共: 框.length, 压方块: 框.filter((b) => 方块框.some((n) => 压(b, n))).length, 互压 };
+}
+
+// 拖动之后 MUST 重新退让，不能把出图时那套躲让抹平。
+// 曾经只把标注挪到曲线中点就算跟随，密图上一拖就有 3 行字缩进方块底下、4 对糊在一起。
+test('重画之后标注 MUST 重新退让：不压方块、不互相糊', () => {
+  for (const fixture of ['aiudit-internal-control.topology.yaml', 'dense-labels.topology.yaml']) {
+    const 无 = 重画后量压叠(fixture, false);
+    const 有 = 重画后量压叠(fixture, true);
+    assert.ok(无.压方块 + 无.互压 > 0,
+      `${fixture}：不退让时也没有压叠，这份 fixture 证明不了退让有用，换一份`);
+    assert.equal(有.压方块, 0, `${fixture}：退让之后仍有 ${有.压方块} 行字压在方块上`);
+    assert.equal(有.互压, 0, `${fixture}：退让之后仍有 ${有.互压} 对标注糊在一起`);
+  }
+});
+
+// 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
+// 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
+// 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。
 test('浏览器那份分槽规则与出图同源：常量与四个分槽函数逐个同解', () => {
   const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorPoint, anchorSortKey, assignAnchors }
     = 取浏览器几何();

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { layoutFolded } from './layout.mjs';
+import { layoutFolded, EDGE_LABEL } from './layout.mjs';
 import { applyFilter, foldSummary } from './interactions.mjs';
 import { FORM_MARK, LABEL_GAP } from './marks.mjs';
 import { renderMarkdown } from './markdown.mjs';
@@ -671,6 +671,14 @@ export function renderHtml({ data, layout: pageLayout, enriched = {}, warnings =
   WORDS = LANGS[lang] || LANGS.zh;
   const payload = {
     ...data,
+    // 拖动之后 app.js 要重新给标注退让，它需要两样东西：退让参数（唯一真相在
+    // layout.mjs，MUST NOT 在 app.js 里另写一套）与每条线上那行字占多大。
+    // 尺寸优先在浏览器里用 getBBox() 现量，量不到才退回这里出图时估的值。
+    labelLayout: {
+      ...EDGE_LABEL,
+      sizes: Object.fromEntries((pageLayout.edges || [])
+        .map((edge) => [`${edge.from}->${edge.to}`, { w: edge.labelW, h: edge.labelH }])),
+    },
     checklist: enriched.checklist || [],
     prompts: [...(enriched.prompts || new Map()).entries()],
     // 页面脚本自己要说的那几句话也从这里取——app.js 是原样内联进页面的，
