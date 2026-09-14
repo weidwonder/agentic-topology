@@ -142,52 +142,82 @@ function boxOf(element) {
   };
 }
 
-// 来回两条边（A→B 与 B→A）在这里会算出同一条曲线、只是首尾颠倒，叠上去就只剩一条。
-// 两条边方向相反、法线也相反，所以两边都朝各自的法线让开同样的距离，就分到了路径两侧。
-// 这个值 MUST 与 scripts/lib/layout.mjs 的 EDGE_PAIR_OFFSET 一致，否则拖动前后错开量会变。
-const PAIR_OFFSET = 10;
+// 一个方块上挂着好几条线时，它们 MUST NOT 都从同一条边框的正中出入——全挤在一点，
+// 箭头叠成一团，看不出哪条线连的是谁。所以分两步：先按两个方块的相对位置定「走哪条边框」，
+// 再把落在同一条边框上的接点沿这条边框排开。
+// 这两个值与下面的 anchorRatio MUST 与 scripts/lib/layout.mjs 里同名的那份一致，
+// 否则同一张图在出图时和拖过之后接点会跳。
+const ANCHOR_PAD = 10;
+const ANCHOR_SLOT = 18;
 
-/** 一条边要不要错开：只有反向边也在图上时才错，单向边照旧走正中间。 */
-function pairSeparation(edgeKeys, fromId, toId) {
-  if (fromId === toId) return 0;
-  return edgeKeys.has(`${toId}->${fromId}`) ? PAIR_OFFSET : 0;
+/** 同一条边框上第 index 个（共 count 个）接点落在这条边框的哪个比例位置。只有一条线时就是正中。 */
+function anchorRatio(index, count, length) {
+  if (count <= 1) return 0.5;
+  // 摊开的总宽不超过边框减掉两头留白；线少时按 ANCHOR_SLOT 收着排，免得两条线也摊成一把扇子。
+  const usable = Math.max(0, length - ANCHOR_PAD * 2);
+  const spacing = Math.min(ANCHOR_SLOT, usable / count);
+  return 0.5 + ((index - (count - 1) / 2) * spacing) / length;
 }
 
-function routeEdge(from, to, separation) {
-  const fromMid = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-  const toMid = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-  const dx = toMid.x - fromMid.x;
-  const dy = toMid.y - fromMid.y;
-  let start;
-  let end;
-  let c1;
-  let c2;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const offset = Math.max(40, Math.abs(dx) * 0.4);
-    start = { x: dx >= 0 ? from.x + from.w : from.x, y: fromMid.y };
-    end = { x: dx >= 0 ? to.x : to.x + to.w, y: toMid.y };
-    c1 = { x: start.x + (dx >= 0 ? offset : -offset), y: start.y };
-    c2 = { x: end.x - (dx >= 0 ? offset : -offset), y: end.y };
-  } else {
-    const offset = Math.max(36, Math.abs(dy) * 0.4);
-    start = { x: fromMid.x, y: dy >= 0 ? from.y + from.h : from.y };
-    end = { x: toMid.x, y: dy >= 0 ? to.y : to.y + to.h };
-    c1 = { x: start.x, y: start.y + (dy >= 0 ? offset : -offset) };
-    c2 = { x: end.x, y: end.y - (dy >= 0 ? offset : -offset) };
+/** 比例位置换成边框线上的实际坐标：接点永远贴在边框上，既不进方块也不出方块。 */
+function anchorPoint(box, side, ratio) {
+  if (side === 'top') return { x: box.x + box.w * ratio, y: box.y };
+  if (side === 'bottom') return { x: box.x + box.w * ratio, y: box.y + box.h };
+  if (side === 'left') return { x: box.x, y: box.y + box.h * ratio };
+  return { x: box.x + box.w, y: box.y + box.h * ratio };
+}
+
+/** 同一条边框上谁排前面：看对端在哪边。对端靠上的线接点也靠上，线就不用互相穿过去。 */
+function anchorSortKey(side, other) {
+  return side === 'left' || side === 'right' ? other.y + other.h / 2 : other.x + other.w / 2;
+}
+
+/** 拖过之后没有「列」这回事：横着差得多就走左右两条边框，否则走上下。 */
+function edgeSides(from, to) {
+  const dx = (to.x + to.w / 2) - (from.x + from.w / 2);
+  const dy = (to.y + to.h / 2) - (from.y + from.h / 2);
+  if (Math.abs(dx) >= Math.abs(dy))
+    return dx >= 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
+  return dy >= 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
+}
+
+/**
+ * 一次算完整张图的接点：按「方块 + 哪条边框」归堆，堆内按对端方位排序，再沿边框均分。
+ * 排序 MUST 有确定的 tie-break（这里用边的键 + 是首端还是尾端），否则每次重画的顺序都可能不一样。
+ */
+function assignAnchors(plans) {
+  const bySide = new Map();
+  for (const plan of plans) {
+    for (const endpoint of [plan.tail, plan.head]) {
+      const key = `${endpoint.nodeId}\u0000${endpoint.side}`;
+      if (!bySide.has(key)) bySide.set(key, []);
+      bySide.get(key).push(endpoint);
+    }
   }
-  if (separation) {
-    const length = Math.hypot(end.x - start.x, end.y - start.y) || 1;
-    // 只沿卡片那条边滑动：起终点贴在边框上，往边框外挪要么缩到卡片底下，要么空出一道缝。
-    // 上面挑边时已按 dx/dy 谁大定了从哪条边出去，这里跟着那个判断取分量即可。
-    const shift = Math.abs(dx) >= Math.abs(dy)
-      ? { x: 0, y: ((end.x - start.x) / length) * separation }
-      : { x: (-(end.y - start.y) / length) * separation, y: 0 };
-    const move = (point) => ({ x: point.x + shift.x, y: point.y + shift.y });
-    start = move(start);
-    end = move(end);
-    c1 = move(c1);
-    c2 = move(c2);
+  for (const endpoints of bySide.values()) {
+    endpoints.sort((a, b) => (a.sortKey - b.sortKey)
+      || (a.tieBreak < b.tieBreak ? -1 : a.tieBreak > b.tieBreak ? 1 : 0));
+    const { box, side } = endpoints[0];
+    const length = side === 'left' || side === 'right' ? box.h : box.w;
+    endpoints.forEach((endpoint, index) => {
+      endpoint.point = anchorPoint(endpoint.box, side, anchorRatio(index, endpoints.length, length));
+    });
   }
+}
+
+/** 接点定了之后拉贝塞尔：控制点朝出发的那条边框的法线方向探出去，线才是从边上「长」出来的。 */
+function routeEdge(start, end, fromSide) {
+  const horizontal = fromSide === 'left' || fromSide === 'right';
+  const sign = fromSide === 'right' || fromSide === 'bottom' ? 1 : -1;
+  const offset = horizontal
+    ? Math.max(40, Math.abs(end.x - start.x) * 0.4)
+    : Math.max(36, Math.abs(end.y - start.y) * 0.4);
+  const c1 = horizontal
+    ? { x: start.x + sign * offset, y: start.y }
+    : { x: start.x, y: start.y + sign * offset };
+  const c2 = horizontal
+    ? { x: end.x - sign * offset, y: end.y }
+    : { x: end.x, y: end.y - sign * offset };
   const round = (value) => Math.round(value * 10) / 10;
   const mid = {
     x: (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8,
@@ -203,20 +233,40 @@ function routeEdge(from, to, separation) {
 
 function redrawEdges() {
   const nodes = new Map([...document.querySelectorAll('.topo-node')].map((el) => [el.dataset.nodeId, el]));
-  const paths = [...document.querySelectorAll('#view-overview path[data-edge-id]')];
-  const edgeKeys = new Set(paths.map((path) => path.dataset.edgeId));
-  const seen = new Set();
-  for (const path of paths) {
+  const boxes = new Map();
+  const boxOfNode = (id) => {
+    if (!boxes.has(id)) boxes.set(id, boxOf(nodes.get(id)));
+    return boxes.get(id);
+  };
+  // 一条边在 DOM 里有两个 path（画出来那条 + 加宽的点击区），它们共用一个 data-edge-id。
+  // 分槽按「边」算，MUST NOT 按 path 算——按 path 算等于每条边都被数了两遍，接点会摊开一倍。
+  const plans = new Map();
+  for (const path of document.querySelectorAll('#view-overview path[data-edge-id]')) {
     const key = path.dataset.edgeId;
+    if (plans.has(key)) {
+      plans.get(key).paths.push(path);
+      continue;
+    }
     const [fromId, toId] = key.split('->');
-    const from = nodes.get(fromId);
-    const to = nodes.get(toId);
-    if (!from || !to) continue;
-    const geometry = routeEdge(boxOf(from), boxOf(to), pairSeparation(edgeKeys, fromId, toId));
-    path.setAttribute('d', geometry.d);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const label = document.querySelector(`#view-overview text[data-edge-id="${CSS.escape(key)}"]`);
+    if (!nodes.has(fromId) || !nodes.has(toId)) continue;
+    const from = boxOfNode(fromId);
+    const to = boxOfNode(toId);
+    const { fromSide, toSide } = edgeSides(from, to);
+    plans.set(key, {
+      key,
+      paths: [path],
+      fromSide,
+      tail: { nodeId: fromId, side: fromSide, box: from,
+        sortKey: anchorSortKey(fromSide, to), tieBreak: `${key}#tail` },
+      head: { nodeId: toId, side: toSide, box: to,
+        sortKey: anchorSortKey(toSide, from), tieBreak: `${key}#head` },
+    });
+  }
+  assignAnchors([...plans.values()]);
+  for (const plan of plans.values()) {
+    const geometry = routeEdge(plan.tail.point, plan.head.point, plan.fromSide);
+    for (const path of plan.paths) path.setAttribute('d', geometry.d);
+    const label = document.querySelector(`#view-overview text[data-edge-id="${CSS.escape(plan.key)}"]`);
     if (label) {
       label.setAttribute('x', geometry.labelX);
       label.setAttribute('y', geometry.labelY);

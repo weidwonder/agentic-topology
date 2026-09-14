@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FX, data, intersects } from './helpers.mjs';
-import { layout, EDGE_PAIR_OFFSET } from '../scripts/lib/layout.mjs';
+import { layout, EDGE_ANCHOR } from '../scripts/lib/layout.mjs';
 
 /** 把一条 d 均匀采样成一串点，用来量两条线离得有多远。 */
 function 采样(d, count = 60) {
@@ -29,10 +29,28 @@ function 最近距离(d1, d2) {
 /** 把 app.js 里那段浏览器几何规则抠出来跑——它不是模块，只能按文本取。 */
 function 取浏览器几何() {
   const js = readFileSync('assets/page-shell/app.js', 'utf8');
-  const source = js.match(/const PAIR_OFFSET[\s\S]*?\nfunction routeEdge\([\s\S]*?\n}\n/);
-  assert.ok(source, 'app.js 里找不到 PAIR_OFFSET + routeEdge 这一段');
-  return new Function(`${source[0]}\nreturn { PAIR_OFFSET, pairSeparation, routeEdge };`)();
+  const source = js.match(/const ANCHOR_PAD[\s\S]*?\nfunction routeEdge\([\s\S]*?\n}\n/);
+  assert.ok(source, 'app.js 里找不到 ANCHOR_PAD + routeEdge 这一段');
+  return new Function(`${source[0]}\nreturn { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorPoint,`
+    + ' anchorSortKey, edgeSides, assignAnchors, routeEdge };')();
 }
+
+/** 造一张「一个节点扇出到 count 个节点」的最小图，用来看接点分不分得开。 */
+function 扇形图(count) {
+  const 节点 = (id, group) => ({ id, name: id, kind: 'program', responsibility: '', group,
+    confidence: 'certain' });
+  const 下游 = Array.from({ length: count }, (_, i) => `W${i + 1}`);
+  return {
+    groups: [{ id: 'g1', name: '甲', order: 1 }, { id: 'g2', name: '乙', order: 2 }],
+    nodes: [节点('HUB', 'g1'), ...下游.map((id) => 节点(id, 'g2'))],
+    edges: 下游.map((to) => ({ from: 'HUB', to, category: 'normal', confidence: 'certain',
+      payloads: [] })),
+    information: [],
+  };
+}
+
+const 起点 = (d) => d.match(/^M(-?[\d.]+),(-?[\d.]+)/).slice(1, 3).map(Number);
+const 终点 = (d) => d.match(/(-?[\d.]+),(-?[\d.]+)$/).slice(1, 3).map(Number);
 
 const E = (L, f, t) => {
   const e = L.edges.find((x) => x.from === f && x.to === t);
@@ -135,49 +153,172 @@ test('退让失败时不静默：置 overlapUnresolved 与 warning 一一对应�
   }
 });
 
-// 三处一起测「来回两条边看得出是两条」：出图的走线、浏览器重算的走线、以及两边用的是同一个错开量。
-test('来回两条边各自让开，MUST NOT 叠成一条', () => {
-  const doc = data(FX('three-groups.topology.yaml'));
-  const 单向 = layout(doc);
-  const 单向卡片 = 单向.nodes.get('N1');
-  const 单向起点X = Number(E(单向, 'N1', 'N2').d.match(/^M(-?[\d.]+),/)[1]);
-  assert.equal(单向起点X, 单向卡片.x + 单向卡片.w / 2, '没有反向边的照旧从卡片正中拉出去');
+// FR-001/FR-006：一个节点挂几条线，接点就得在那条边框上排开几个。
+// 曾经不论挂多少条都取边框正中，扇出的线在节点处全部重合、箭头叠成一团，看不出哪条连的是谁。
+test('扇出：一个节点的多条出边 MUST 各有各的接点，且都贴在同一条边框上', () => {
+  const L = layout(扇形图(5));
+  const 卡片 = L.nodes.get('HUB');
+  const 起点们 = L.edges.map((e) => 起点(e.d));
+  assert.equal(new Set(起点们.map((p) => p.join(','))).size, 5,
+    `5 条出边只有 ${new Set(起点们.map((p) => p.join(','))).size} 个不同起点——重合的线看上去只有一条`);
+  for (const [x, y] of 起点们) {
+    assert.equal(x, 卡片.x + 卡片.w, '接点 MUST 贴在右边框上，不许跑到卡片里或卡片外');
+    assert.ok(y >= 卡片.y && y <= 卡片.y + 卡片.h, `接点 y=${y} 跑出了卡片上下边界`);
+  }
+});
 
+test('扇入：多条边指向同一个节点时，箭头 MUST NOT 全落在一点', () => {
+  const doc = 扇形图(4);
+  // 掉个头：四个节点各出一条边指向 HUB
+  doc.edges = doc.edges.map((e) => ({ ...e, from: e.to, to: e.from }));
+  const L = layout(doc);
+  const 终点们 = L.edges.map((e) => 终点(e.d).join(','));
+  assert.equal(new Set(终点们).size, 4, `4 条入边只有 ${new Set(终点们).size} 个不同终点`);
+});
+
+test('只挂一条线的边框照旧走正中——单边的图不能因为这次改动变样', () => {
+  const L = layout(扇形图(1));
+  const 卡片 = L.nodes.get('HUB');
+  const [x, y] = 起点(L.edges[0].d);
+  assert.equal(x, 卡片.x + 卡片.w);
+  assert.equal(y, 卡片.y + 卡片.h / 2, '一条边框上只有一个接点时 MUST 仍落在正中');
+});
+
+// FR-002：排序不是为了整齐，是为了少交叉——对端靠上的线，接点也排在上面。
+test('同一条边框上的接点按对端方位排，线不互相穿过去', () => {
+  const L = layout(扇形图(5));
+  const 对端Y = (e) => L.nodes.get(e.to).y;
+  const 按对端排 = [...L.edges].sort((a, b) => 对端Y(a) - 对端Y(b));
+  const 接点Y = 按对端排.map((e) => 起点(e.d)[1]);
+  for (let i = 1; i < 接点Y.length; i += 1)
+    assert.ok(接点Y[i] > 接点Y[i - 1],
+      `对端更靠下的边，接点却更靠上（${接点Y[i - 1]} → ${接点Y[i]}），两条线会交叉`);
+});
+
+// FR-005：来回两条边分到同一条边框的两个槽位，不再需要单独的成对错开量。
+test('来回两条边各自占一个槽位，MUST NOT 叠成一条', () => {
+  const doc = data(FX('three-groups.topology.yaml'));
   const 模板 = JSON.parse(JSON.stringify(doc.edges.find((e) => e.from === 'N1' && e.to === 'N2')));
   doc.edges.push({ ...模板, from: 'N2', to: 'N1' });
   const 双向 = layout(doc);
-  const 卡片 = 双向.nodes.get('N1');
   const 去 = E(双向, 'N1', 'N2');
   const 回 = E(双向, 'N2', 'N1');
-  const 去起点X = Number(去.d.match(/^M(-?[\d.]+),/)[1]);
-  assert.equal(去起点X, 卡片.x + 卡片.w / 2 - EDGE_PAIR_OFFSET,
-    '有反向边时 MUST 沿卡片边框让开一个错开量，两条线才不会共用同一条中轴');
-  assert.equal(去.d.match(/^M-?[\d.]+,(-?[\d.]+)/)[1], String(卡片.y + 卡片.h),
-    '让开只许沿边框滑，不许离开卡片下边框');
-  assert.ok(最近距离(去.d, 回.d) >= EDGE_PAIR_OFFSET * 2,
+  assert.notDeepEqual(起点(去.d), 终点(回.d), 'N1 上一出一进 MUST 分在两个槽位');
+  assert.notDeepEqual(终点(去.d), 起点(回.d), 'N2 上一进一出 MUST 分在两个槽位');
+  assert.ok(最近距离(去.d, 回.d) > 0,
     `两个方向最近只差 ${最近距离(去.d, 回.d).toFixed(1)}px，看上去还是一条线`);
 });
 
-test('拖动后重算的走线同样错开：routeEdge 两个方向分到路径两侧', () => {
-  const { PAIR_OFFSET, routeEdge } = 取浏览器几何();
-  const 甲 = { x: 0, y: 0, w: 184, h: 90 };
-  const 乙 = { x: 420, y: 60, w: 184, h: 90 };
-  const 去 = routeEdge(甲, 乙, PAIR_OFFSET);
-  const 回 = routeEdge(乙, 甲, PAIR_OFFSET);
-  assert.ok(最近距离(去.d, 回.d) >= PAIR_OFFSET * 1.4,
-    `拖动后来回两条边最近只差 ${最近距离(去.d, 回.d).toFixed(1)}px——不给 separation 时两条一模一样，等于只画了一条`);
-  const 不让开 = 最近距离(routeEdge(甲, 乙, 0).d, routeEdge(乙, 甲, 0).d);
-  assert.ok(不让开 < 1, '这条用例的前提是：不让开时两条线本来就是同一条');
-  assert.ok(Math.abs(去.labelY - 回.labelY) >= PAIR_OFFSET, '两条边的标注也要跟着分开，否则叠在一起看不清');
+test('边界：一条边框上挂 12 条线，接点 MUST 仍落在边框内且两两不同', () => {
+  const L = layout(扇形图(12));
+  const 卡片 = L.nodes.get('HUB');
+  const 起点们 = L.edges.map((e) => 起点(e.d));
+  assert.equal(new Set(起点们.map((p) => p.join(','))).size, 12, '挤是可以的，重合不行');
+  for (const [, y] of 起点们)
+    assert.ok(y >= 卡片.y && y <= 卡片.y + 卡片.h, `接点 y=${y} 被挤出了卡片边框`);
 });
 
-test('浏览器那份几何规则与出图同源：反向边才错开，错开量取同一个常数', () => {
-  const { PAIR_OFFSET, pairSeparation } = 取浏览器几何();
-  assert.equal(PAIR_OFFSET, EDGE_PAIR_OFFSET, 'app.js 与 layout.mjs 的错开量 MUST 一致，否则拖动前后错开距离会变');
-  assert.equal(pairSeparation(new Set(['A->B']), 'A', 'B'), 0, '单向边不该被挪开');
-  assert.equal(pairSeparation(new Set(['A->B', 'B->A']), 'A', 'B'), PAIR_OFFSET);
-  assert.equal(pairSeparation(new Set(['A->B', 'B->A']), 'B', 'A'), PAIR_OFFSET, '两个方向同号，才会分到路径两侧');
-  assert.equal(pairSeparation(new Set(['A->A']), 'A', 'A'), 0, '自环没有「反向」可言');
+test('边界：没有边、以及自环，MUST NOT 出错；自环两端也不重合', () => {
+  const 空图 = 扇形图(1);
+  空图.edges = [];
+  assert.doesNotThrow(() => layout(空图));
+  assert.equal(layout(空图).edges.length, 0);
+
+  const 自环 = 扇形图(1);
+  自环.edges = [{ from: 'HUB', to: 'HUB', category: 'normal', confidence: 'certain', payloads: [] }];
+  const L = layout(自环);
+  assert.equal(L.edges.length, 1);
+  assert.notDeepEqual(起点(L.edges[0].d), 终点(L.edges[0].d),
+    '自环的出点与入点重合，就是一个看不见的点');
+});
+
+// 出图 MUST 是确定性的：分槽的排序有并列时靠边的键收尾，两次跑出来 MUST 逐字节一样。
+test('同一份描述连出两次图，全部走线逐字节一致', () => {
+  for (const name of ['three-groups.topology.yaml', 'benchmarks/multica.topology.yaml']) {
+    const 第一次 = layout(data(FX(name))).edges.map((e) => e.d);
+    const 第二次 = layout(data(FX(name))).edges.map((e) => e.d);
+    assert.deepEqual(第一次, 第二次, `${name}：两次出图的走线不一样，分槽排序不确定`);
+  }
+});
+
+test('拖动后重算的走线同样分开：routeEdge 按分好的接点画', () => {
+  const { anchorSortKey, edgeSides, assignAnchors, routeEdge } = 取浏览器几何();
+  const 方块 = (x, y) => ({ x, y, w: 184, h: 90 });
+  const 甲 = 方块(0, 300);
+  const 乙们 = [方块(420, 0), 方块(420, 150), 方块(420, 300), 方块(420, 450), 方块(420, 600)];
+  const plans = 乙们.map((乙, i) => {
+    const { fromSide, toSide } = edgeSides(甲, 乙);
+    const key = `A->B${i}`;
+    return { key, fromSide,
+      tail: { nodeId: 'A', side: fromSide, box: 甲, sortKey: anchorSortKey(fromSide, 乙),
+        tieBreak: `${key}#tail` },
+      head: { nodeId: `B${i}`, side: toSide, box: 乙, sortKey: anchorSortKey(toSide, 甲),
+        tieBreak: `${key}#head` } };
+  });
+  assignAnchors(plans);
+  const 起点们 = plans.map((p) => routeEdge(p.tail.point, p.head.point, p.fromSide))
+    .map((g) => g.d.match(/^M(-?[\d.]+),(-?[\d.]+)/).slice(1, 3).join(','));
+  assert.equal(new Set(起点们).size, 5,
+    `拖动后 5 条线只有 ${new Set(起点们).size} 个不同起点——等于只画了一条`);
+});
+
+/**
+ * 把 app.js 里 boxOf..redrawEdges 整段抠出来，配一个最小的假 DOM 跑一遍。
+ * 只有这样才量得到「一条边在 DOM 里有两个 path」这件事有没有被数成两条边。
+ */
+function 跑一遍重画(节点们, 边键们) {
+  const js = readFileSync('assets/page-shell/app.js', 'utf8');
+  const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/);
+  assert.ok(source, 'app.js 里找不到 boxOf..redrawEdges 这一段');
+  const 方块们 = 节点们.map(([id, box]) => ({
+    dataset: { nodeId: id },
+    style: { left: `${box.x}px`, top: `${box.y}px` },
+    offsetWidth: box.w,
+    offsetHeight: box.h,
+  }));
+  // 一条边在页面上是两个 path：画出来那条 + 加宽的点击区，共用一个 data-edge-id。
+  const 线们 = 边键们.flatMap((edgeId) => [0, 1].map(() => ({
+    dataset: { edgeId },
+    d: null,
+    setAttribute(name, value) { if (name === 'd') this.d = value; },
+  })));
+  const 假document = {
+    querySelectorAll: (selector) => (selector.includes('.topo-node') ? 方块们 : 线们),
+    querySelector: () => null,
+  };
+  new Function('document', 'CSS', `${source[0]}\nreturn redrawEdges;`)(
+    假document, { escape: (value) => value })();
+  return 线们;
+}
+
+// 曾经差点按 path 数分槽：一条边两个 path，5 条线会被当成 10 条，接点摊开一倍、
+// 而且两个 path 各自算各自的，画出来那条和点击区还会错位。
+test('重画时分槽按边算而不是按 path 算：一条边的两个 path 走同一条线', () => {
+  const 甲 = { x: 0, y: 300, w: 184, h: 90 };
+  const 乙们 = [0, 150, 300, 450, 600].map((y, i) => [`B${i}`, { x: 520, y, w: 184, h: 90 }]);
+  const 线们 = 跑一遍重画([['A', 甲], ...乙们], 乙们.map(([id]) => `A->${id}`));
+  assert.equal(线们.length, 10, '前提：每条边两个 path');
+  for (let i = 0; i < 线们.length; i += 2)
+    assert.equal(线们[i].d, 线们[i + 1].d, '同一条边的画线与点击区 MUST 重合，否则点不到线上');
+
+  const 接点Y = [...new Set(线们.map((line) => Number(line.d.match(/^M-?[\d.]+,(-?[\d.]+)/)[1])))]
+    .sort((a, b) => a - b);
+  assert.equal(接点Y.length, 5, `5 条边应有 5 个接点，实际 ${接点Y.length}`);
+  const 间距 = 接点Y[1] - 接点Y[0];
+  const 期望 = Math.min(EDGE_ANCHOR.SLOT, (甲.h - EDGE_ANCHOR.PAD * 2) / 5);
+  assert.ok(Math.abs(间距 - 期望) < 0.2,
+    `接点间距 ${间距}，按 5 条边算应是 ${期望}——对不上说明把两个 path 当成了两条边`);
+});
+
+test('浏览器那份分槽规则与出图同源：常量同值，比例算法同解', () => {
+  const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio } = 取浏览器几何();
+  assert.equal(ANCHOR_PAD, EDGE_ANCHOR.PAD, 'app.js 与 layout.mjs 的边框留白 MUST 一致');
+  assert.equal(ANCHOR_SLOT, EDGE_ANCHOR.SLOT, 'app.js 与 layout.mjs 的槽距上限 MUST 一致');
+  for (const count of [1, 2, 3, 5, 12])
+    for (const length of [76, 90, 184, 240])
+      for (let index = 0; index < count; index += 1)
+        assert.equal(anchorRatio(index, count, length), EDGE_ANCHOR.ratio(index, count, length),
+          `第 ${index}/${count} 个接点在长 ${length} 的边框上算出的位置两边对不上`);
 });
 
 test('标签宽度用 measureLabel 算，不是自己估的', () => {
