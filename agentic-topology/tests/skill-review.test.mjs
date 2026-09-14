@@ -185,11 +185,21 @@ test('描述性文字的写法立了规则，且三处入口都指得到', () =>
   assert.match(节, /别这么写 \| 这么写/, '缺正反对照表——只讲道理不给例子，模型照样写黑话');
   assert.match(节, /MUST NOT 拿它牺牲准确/, '缺"说人话不等于含糊"的反向约束');
 
-  assert.match(readFileSync('SKILL.md', 'utf8'), /§3bis/, 'SKILL.md 第 3 步没指向 §3bis');
+  // 入口 MUST 按位置查：全文 match 挡不住「把入口搬走、在别处留三个字」——
+  // 模型读的是第 3 步和字段行，不是整份文件。
+  const skill = readFileSync('SKILL.md', 'utf8');
+  const 第三步 = skill.slice(skill.indexOf('### 第 3 步'), skill.indexOf('### 第 4 步'));
+  assert.match(第三步, /§3bis/, 'SKILL.md 第 3 步没指向 §3bis');
+
   const 格式 = readFileSync('references/编排描述格式.md', 'utf8');
   assert.match(格式, /§3bis/, '格式契约没指向 §3bis');
-  for (const 字段 of ['responsibility', 'purpose'])
-    assert.ok(格式.includes(`\`${字段}\``), `格式契约里找不到 ${字段} 这一行`);
+  // 五个描述性字段各自那一行 MUST 自己带指向：模型是照着字段表逐行填的。
+  for (const 字段 of ['responsibility', 'inputs', 'outputs', 'purpose', 'condition']) {
+    const 行 = 格式.split('\n').filter((l) => l.startsWith(`| \`${字段}\``));
+    assert.ok(行.length > 0, `格式契约里找不到 ${字段} 这一行`);
+    assert.ok(行.some((l) => /§3bis|说人话/.test(l)),
+      `格式契约的 ${字段} 行没指向 §3bis——模型填这一格时看不到写法规则`);
+  }
 
   assert.match(纪律.slice(纪律.indexOf('## 8.')), /§3bis/, '收尾自查清单没把这条收进去');
 });
