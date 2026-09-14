@@ -305,7 +305,11 @@ function overview(data, pageLayout, staleness) {
     return `<path class="topo-edge ${cls}${trust}" data-edge-id="${value(edgeId)}"` +
       ` d="${esc(edge.d)}" marker-end="url(#ah-${cls.slice(3)})"/>` +
       `<path class="topo-edge-hit" data-edge-id="${value(edgeId)}" d="${esc(edge.d)}">${tip}</path>` +
-      `<text class="topo-elabel" x="${edge.labelX}" y="${edge.labelY}">` +
+      // data-label-for 只用来定位：拖动之后 app.js 靠它找到这行字、跟着线一起挪。
+      // MUST NOT 改回 data-edge-id——点击派发按那个属性认「连线浮层的入口」，
+      // 而这行字现在是信息高亮的触发点，一次点击不能同时干两件事。
+      `<text class="topo-elabel" data-label-for="${value(edgeId)}"` +
+      ` x="${edge.labelX}" y="${edge.labelY}">` +
       `${(edge.labelParts || [{ info: null, text: edge.label }]).map((part, index) =>
         `${index ? esc(LABEL_GAP) : ''}<tspan${part.info
           ? ` class="topo-elabel-name" data-info-id="${value(part.info)}"` : ''}>` +

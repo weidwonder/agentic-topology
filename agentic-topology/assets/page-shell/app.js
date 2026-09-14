@@ -273,7 +273,11 @@ function redrawEdges() {
   for (const plan of plans.values()) {
     const geometry = routeEdge(plan.tail.point, plan.head.point, plan.fromSide);
     for (const path of plan.paths) path.setAttribute('d', geometry.d);
-    const label = document.querySelector(`#view-overview text[data-edge-id="${CSS.escape(plan.key)}"]`);
+    // 靠 data-label-for 认这行字。MUST NOT 用 data-edge-id——标注身上没有那个属性
+    // （它标的是「连线浮层的入口」，标注不是入口），按它找永远是 null，
+    // 线跟着拖走了、字却留在原地。
+    const label = document.querySelector(
+      `#view-overview text[data-label-for="${CSS.escape(plan.key)}"]`);
     if (label) {
       label.setAttribute('x', geometry.labelX);
       label.setAttribute('y', geometry.labelY);
@@ -499,7 +503,8 @@ document.addEventListener('click', (event) => {
       || readData()?.ui?.detail || '');
     return;
   }
-  // 点一条线 MUST 能看到它的详情（FR-026）——线本身、加宽的点击区、线上的标注都算。
+  // 点一条线 MUST 能看到它的详情（FR-026）——线本身与加宽的点击区都算。
+  // 线上的标注**不算**：它是信息高亮的触发点，身上只有定位用的 data-label-for。
   const edge = event.target.closest('[data-edge-id]');
   if (edge) {
     const detail = document.querySelector(`[data-edge-detail="${CSS.escape(edge.dataset.edgeId)}"]`);

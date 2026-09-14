@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FX, data, intersects } from './helpers.mjs';
+import { FX, data, intersects, renderOk, sect } from './helpers.mjs';
 import { layout, EDGE_ANCHOR } from '../scripts/lib/layout.mjs';
 
 /** 把一条 d 均匀采样成一串点，用来量两条线离得有多远。 */
@@ -292,7 +292,7 @@ test('分槽的绝对下界：槽距与接点间距 MUST NOT 缩到看不出是�
  * 把 app.js 里 boxOf..redrawEdges 整段抠出来，配一个最小的假 DOM 跑一遍。
  * 只有这样才量得到「一条边在 DOM 里有两个 path」这件事有没有被数成两条边。
  */
-function 跑一遍重画(节点们, 边键们) {
+function 跑一遍重画(节点们, 边键们, { 带标注 = false } = {}) {
   const js = readFileSync('assets/page-shell/app.js', 'utf8');
   const source = js.match(/function boxOf\([\s\S]*?\nfunction redrawEdges\([\s\S]*?\n}\n/);
   assert.ok(source, 'app.js 里找不到 boxOf..redrawEdges 这一段');
@@ -308,13 +308,16 @@ function 跑一遍重画(节点们, 边键们) {
     d: null,
     setAttribute(name, value) { if (name === 'd') this.d = value; },
   })));
+  // 线上标注按出图产物的真实形状：class + data-label-for，**没有** data-edge-id。
+  const 标注 = { dataset: { labelFor: 边键们[0] }, attrs: { x: '111', y: '222' },
+    setAttribute(name, value) { this.attrs[name] = String(value); } };
   const 假document = {
     querySelectorAll: (selector) => (selector.includes('.topo-node') ? 方块们 : 线们),
-    querySelector: () => null,
+    querySelector: (selector) => (带标注 && /text\[data-label-for/.test(selector) ? 标注 : null),
   };
   new Function('document', 'CSS', `${source[0]}\nreturn redrawEdges;`)(
     假document, { escape: (value) => value })();
-  return 线们;
+  return 带标注 ? { 线们, 标注 } : 线们;
 }
 
 // 曾经差点按 path 数分槽：一条边两个 path，5 条线会被当成 10 条，接点摊开一倍、
@@ -339,6 +342,40 @@ test('重画时分槽按边算而不是按 path 算：一条边的两个 path �
 // 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
 // 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
 // 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。
+// 线拖走了、线上的材料标记留在原地——2026-09-02 把标注的 data-edge-id 摘掉时
+// （它不再是连线浮层的入口），漏改了重算那一处，它至今还按 data-edge-id 找这行字，
+// 永远找不到。所以这里钉的是两件事：出图产物带得出定位属性、重算按同一个属性找。
+test('出图给线上标注留了定位属性，且不是 data-edge-id', () => {
+  // 只查全貌视图：折叠视图的卡片不参与拖动，那边的标注不需要定位属性。
+  const html = sect(renderOk(FX('three-groups.topology.yaml'), 'label-follow.html'), 'view-overview');
+  const 标注们 = [...html.matchAll(/<text class="topo-elabel"([^>]*)>/g)].map((m) => m[1]);
+  assert.ok(标注们.length > 0, '这份 fixture 出图后一条线上标注都没有，钉不住东西');
+  for (const attrs of 标注们) {
+    assert.match(attrs, /data-label-for="[^"]+"/,
+      '线上标注没有定位属性，拖动后 app.js 找不到它，字就留在原地');
+    assert.doesNotMatch(attrs, /data-edge-id=/,
+      '标注不许带 data-edge-id——点击派发按它认「连线浮层入口」，一次点击不能同时干两件事');
+  }
+  const app = readFileSync('assets/page-shell/app.js', 'utf8');
+  assert.match(app, /text\[data-label-for=/,
+    'app.js 没按 data-label-for 找标注——出图侧和重算侧用的属性 MUST 是同一个');
+  assert.doesNotMatch(app, /text\[data-edge-id=/,
+    'app.js 还在按 data-edge-id 找标注，那个属性标注身上没有，找出来永远是 null');
+});
+
+// 光断言属性还不够：属性在、代码也按它找，中间接错一个键照样不动。这里真跑一遍重算。
+test('拖动后重算：线上标注 MUST 跟着线走', () => {
+  const 甲 = { x: 0, y: 300, w: 184, h: 90 };
+  const 乙 = { x: 520, y: 100, w: 184, h: 90 };
+  const { 标注 } = 跑一遍重画([['A', 甲], ['B', 乙]], ['A->B'], { 带标注: true });
+  assert.notEqual(标注.attrs.x, '111', '标注的 x 没动——线跟着走了，材料标记留在原地');
+  assert.notEqual(标注.attrs.y, '222', '标注的 y 没动');
+  const x = Number(标注.attrs.x);
+  const y = Number(标注.attrs.y);
+  assert.ok(x > 甲.x + 甲.w && x < 乙.x, `标注落在 x=${x}，不在两个方块之间的那段线上`);
+  assert.ok(y > 乙.y && y < 甲.y + 甲.h, `标注落在 y=${y}，离这条线太远`);
+});
+
 test('浏览器那份分槽规则与出图同源：常量与四个分槽函数逐个同解', () => {
   const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorPoint, anchorSortKey, assignAnchors }
     = 取浏览器几何();
