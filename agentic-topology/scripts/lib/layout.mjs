@@ -261,7 +261,7 @@ function assignAnchors(plans) {
   for (const endpoints of bySide.values()) {
     endpoints.sort((a, b) => (a.sortKey - b.sortKey)
       || (a.tieBreak < b.tieBreak ? -1 : a.tieBreak > b.tieBreak ? 1 : 0));
-    // 同一桶里的端点按定义就是同一个方块的同一条边框，box 取第一个即可，下面一路用它。
+    // 同一桶里的端点按定义就是同一个节点的同一条边框，box 取第一个即可，下面一路用它。
     const { box, side } = endpoints[0];
     const length = side === 'left' || side === 'right' ? box.h : box.w;
     endpoints.forEach((endpoint, index) => {
