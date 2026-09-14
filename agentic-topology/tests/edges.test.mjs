@@ -310,15 +310,41 @@ test('重画时分槽按边算而不是按 path 算：一条边的两个 path �
     `接点间距 ${间距}，按 5 条边算应是 ${期望}——对不上说明把两个 path 当成了两条边`);
 });
 
-test('浏览器那份分槽规则与出图同源：常量同值，比例算法同解', () => {
-  const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio } = 取浏览器几何();
+// 两边是逐字复制的两份代码，所以四样都要钉：常量、比例、排序、分槽。
+// 只钉常量与比例是不够的——排序取反或 tie-break 变了，接点集合还是那几个坐标，
+// 只是谁排在谁前面悄悄错位，别的用例（只查"两两不同"和"槽距多少"）一条都发现不了。
+test('浏览器那份分槽规则与出图同源：常量、比例、排序、分槽四样同解', () => {
+  const { ANCHOR_PAD, ANCHOR_SLOT, anchorRatio, anchorSortKey, assignAnchors } = 取浏览器几何();
   assert.equal(ANCHOR_PAD, EDGE_ANCHOR.PAD, 'app.js 与 layout.mjs 的边框留白 MUST 一致');
   assert.equal(ANCHOR_SLOT, EDGE_ANCHOR.SLOT, 'app.js 与 layout.mjs 的槽距上限 MUST 一致');
+
   for (const count of [1, 2, 3, 5, 12])
     for (const length of [76, 90, 184, 240])
       for (let index = 0; index < count; index += 1)
         assert.equal(anchorRatio(index, count, length), EDGE_ANCHOR.ratio(index, count, length),
           `第 ${index}/${count} 个接点在长 ${length} 的边框上算出的位置两边对不上`);
+
+  const 对端 = { x: 300, y: 120, w: 184, h: 90 };
+  for (const side of ['top', 'right', 'bottom', 'left'])
+    assert.equal(anchorSortKey(side, 对端), EDGE_ANCHOR.sortKey(side, 对端),
+      `${side} 边框上的排序依据两边对不上，接点顺序会静默错位`);
+
+  // 故意让三条边的 sortKey 并列：只有 tie-break 也一致，两边排出来的顺序才会一样。
+  const 造一组 = () => {
+    const 本体 = { x: 0, y: 0, w: 184, h: 90 };
+    const 对面 = { x: 400, y: 0, w: 184, h: 90 };
+    return ['A->C', 'A->B', 'A->D'].map((key) => ({
+      tail: { nodeId: 'A', side: 'right', box: 本体, sortKey: 0, tieBreak: `${key}#tail` },
+      head: { nodeId: key.slice(-1), side: 'left', box: 对面, sortKey: 0, tieBreak: `${key}#head` },
+    }));
+  };
+  const 页面侧 = 造一组();
+  const 出图侧 = 造一组();
+  assignAnchors(页面侧);
+  EDGE_ANCHOR.assign(出图侧);
+  assert.deepEqual(页面侧.map((p) => p.tail.point), 出图侧.map((p) => p.tail.point),
+    'sortKey 并列时两边的 tie-break 排序对不上，拖动前后接点会换位');
+  assert.deepEqual(页面侧.map((p) => p.head.point), 出图侧.map((p) => p.head.point));
 });
 
 test('标签宽度用 measureLabel 算，不是自己估的', () => {

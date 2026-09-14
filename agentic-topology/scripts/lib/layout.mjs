@@ -237,10 +237,6 @@ function anchorPoint(box, side, ratio) {
   return { x: box.x + box.w, y: box.y + box.h * ratio };
 }
 
-// 拖动之后连线由 app.js 在浏览器里重算，那份几何规则里有一份同源的分槽副本。
-// 导出这三样是为了让测试钉住两边一致，否则同一张图出图时和拖过之后接点会跳。
-export const EDGE_ANCHOR = { PAD: ANCHOR_PAD, SLOT: ANCHOR_SLOT, ratio: anchorRatio };
-
 /** 同一条边框上谁排前面：看对端在哪边。对端靠上的线接点也靠上，线就不用互相穿过去。 */
 function anchorSortKey(side, other) {
   return side === 'left' || side === 'right' ? other.y + other.h / 2 : other.x + other.w / 2;
@@ -270,6 +266,17 @@ function assignAnchors(plans) {
     });
   }
 }
+
+// 拖动之后连线由 app.js 在浏览器里重算，那份几何规则里有一份逐字复制的分槽副本。
+// 整套都导出来，是为了让测试逐个函数钉住两边同解——只钉常量不够：
+// 排序取反或 tie-break 变了，画出来的接点集合还是那几个，只是顺序悄悄错位，测不出来。
+export const EDGE_ANCHOR = {
+  PAD: ANCHOR_PAD,
+  SLOT: ANCHOR_SLOT,
+  ratio: anchorRatio,
+  sortKey: anchorSortKey,
+  assign: assignAnchors,
+};
 
 /** 五种走线情形各走哪条边框。这里只定「从哪条边出去、从哪条边进来」，具体落点交给分槽器。 */
 function edgeShape(from, to, sourceGroup, targetGroup) {
