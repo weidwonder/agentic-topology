@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "case_id": "mini-case",
+  "agent": "test-agent",
+  "model": "test-model",
+  "attempt": 1,
+  "generated_at": "2026-09-21T00:00:00Z",
+  "protocol": {
+    "benchmarks_dir_excluded": true,
+    "harness_outside_worktree": true,
+    "packaged_skill_root": true,
+    "repo_commit": "deadbeef",
+    "skill_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

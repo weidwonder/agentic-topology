@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "third-project-pending",
+  "status": "pending",
+  "note": "第三个基准项目尚未选定。docs/TODO.md〈选基准项目的规矩〉钉了两条硬性前提：(1) MUST NOT 是本技能任何一份强制加载文档拿来举例的项目——multica 已永久失去资格，因为 references/节点粒度约定.md〈一个真实例子〉逐字描述的就是它；2026-09-21 的复核另外发现 aiudit_platform 事实上也已经不满足这条（见 aiudit-internal-control.case.json 的 blind_test_note），所以这两个项目都不能再选；(2) 划范围 MUST 覆盖系统提示词的装配处，不能把判据要看的地方排除在外。选定之后：先按本 case 里 blind_test_eligible 那一列的方法对 SKILL.md / references/*.md / assets/templates/example.topology.yaml 搜一遍这个新项目的专属词，确认零命中再往下走；然后按 aiudit-internal-control.case.json / cpah-docs-pipeline.case.json 同样的结构补齐 required_agent_nodes / required_edges / required_scope_refs / merge_accounting_required，MUST 只写从真实源码里核实过的内容，读不出来的字段继续留白，不编造。",
+  "blind_test_eligible": null,
+  "required_scope_refs": [],
+  "required_agent_nodes": [],
+  "endpoint_aliases": {},
+  "required_edges": [],
+  "merge_accounting_required": []
+}

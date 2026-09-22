@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "broken-case",
+  "status": "ready",
+  "blind_test_eligible": true,
+  "blind_test_note": "测试夹具。",
+  "required_scope_refs": [],
+  "required_agent_nodes": [
+    { "key": "X", "labels": ["Agent X"], "evidence_refs": [] }
+  ],
+  "endpoint_aliases": {},
+  "required_edges": [
+    { "from": "X", "to": "Y", "why": "Y 从没被声明过，这是故意的" }
+  ],
+  "merge_accounting_required": []
+}

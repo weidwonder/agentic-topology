@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "mini-case",
+  "status": "ready",
+  "project": { "name": "测试用最小项目", "hint_path": "n/a", "read_scope": "n/a" },
+  "provenance": { "basis": ["benchmark.mjs 自己的测试夹具，不对应任何真实项目"], "cross_checked": false, "caveat": "仅供 benchmarks/tests 自测使用" },
+  "blind_test_eligible": true,
+  "blind_test_note": "测试夹具，不对应真实项目，不存在泄题问题。",
+  "required_scope_refs": [
+    { "path_contains": "src/a.ts", "why": "测试范围闸" }
+  ],
+  "required_agent_nodes": [
+    { "key": "A", "labels": ["Agent A", "node-a"], "evidence_refs": [], "why": "测试用" },
+    { "key": "B", "labels": ["Agent B", "node-b"], "evidence_refs": [], "why": "测试用" }
+  ],
+  "endpoint_aliases": {
+    "P1": { "labels": ["程序 P1"], "kind_hint": "program", "evidence_refs": [] },
+    "P2": { "labels": ["程序 P2"], "kind_hint": "program", "evidence_refs": [] }
+  },
+  "required_edges": [
+    { "from": "A", "to": "B", "why": "测试直连边", "evidence_refs": [] },
+    { "from": "P1", "to": "P2", "why": "测试合并留账", "evidence_refs": [] }
+  ],
+  "merge_accounting_required": [
+    {
+      "cluster_key": "p1-p2",
+      "applies_to_edges": [{ "from": "P1", "to": "P2" }],
+      "artifacts": ["测试产物"],
+      "rule_ref": "n/a",
+      "note": "测试合并留账口径"
+    }
+  ],
+  "notes": "夹具，仅供测试。"
+}
