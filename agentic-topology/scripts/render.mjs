@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { parseTopology, TopologyError } from './lib/parse.mjs';
 import { validate } from './lib/validate.mjs';
 import { layout } from './lib/layout.mjs';
@@ -8,13 +9,14 @@ import { writeOutput } from './lib/write-output.mjs';
 import { resolveTarget } from './lib/nonclobber.mjs';
 import { isStale } from './lib/staleness.mjs';
 import { errorText } from './lib/error-text.mjs';
-import { readInput, textOutput, exitCodeFor } from './lib/cli-output.mjs';
+import { readInputBytes, textOutput, exitCodeFor, SCHEMA_VERSION } from './lib/cli-output.mjs';
 
 
 const input = process.argv[2];
 const outputFlag = process.argv.indexOf('-o');
 const force = process.argv.includes('--force');
 const langFlag = process.argv.indexOf('--lang');
+const asJson = process.argv.includes('--json');
 // 缺省是中文：现有使用者不带这个参数跑，出来的图 MUST 跟以前逐字一样。
 const lang = langFlag >= 0 ? process.argv[langFlag + 1] : 'zh';
 try {
@@ -30,8 +32,13 @@ try {
   const output = outputFlag >= 0
     ? process.argv[outputFlag + 1]
     : input.replace(/\.topology\.(yaml|json)$/, '.topology.html');
-  const parsed = parseTopology(await readInput(input), input);
-  const result = validate(parsed.data, parsed.lines);
+  // 冻结快照：描述文件的字节只在这里读一次，后面全程只用这份内存里的 Buffer/文本派生数据。
+  // 不这么做的话，渲染跑到一半时如果磁盘上的描述被改了，产出的图就可能跟你以为在校验、
+  // 在出统计数的那份对不上——而且不会有任何报错，纯粹是运气。
+  const specBytes = await readInputBytes(input);
+  const specText = specBytes.toString('utf8');
+  const parsed = parseTopology(specText, input);
+  const result = validate(parsed.data, parsed.lines, { baseDir: path.dirname(input) });
   if (!result.ok) {
     process.stdout.write(textOutput(result));
     process.exitCode = 2;
@@ -49,13 +56,28 @@ try {
       process.stderr.write(`${warning}\n`);
     }
     const target = resolveTarget(output, force);
-    await writeOutput(target.path, html, parsed.data.source_project);
+    // writeOutput 是全仓唯一的写点，也唯一算「磁盘上这份东西的指纹」（见该函数注释）。
+    const artifact = await writeOutput(target.path, html, parsed.data.source_project);
     if (target.renamedFrom) process.stderr.write(`已有一份，已另存为 ${target.path}\n`);
     // spec §8：成功时 MUST 打印路径与三个数，让人不用打开文件就知道这张图有多大。
     const checks = (enriched.checklist || []).length;
-    process.stdout.write(`输出：${target.path}\n`);
-    process.stdout.write(
-      `${result.stats.nodes} 个方块 · ${result.stats.edges} 条连线 · ${checks} 处要你核实\n`);
+    if (asJson) {
+      // 失败路径（校验不过、写不出去）不会走到这里——收据只在真的产出了东西时才有意义。
+      process.stdout.write(`${JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        specification: {
+          path: input,
+          sha256: createHash('sha256').update(specBytes).digest('hex'),
+          bytes: specBytes.length,
+        },
+        artifact: { path: target.path, sha256: artifact.sha256, bytes: artifact.bytes },
+        stats: { nodes: result.stats.nodes, edges: result.stats.edges, checklist: checks },
+      })}\n`);
+    } else {
+      process.stdout.write(`输出：${target.path}\n`);
+      process.stdout.write(
+        `${result.stats.nodes} 个方块 · ${result.stats.edges} 条连线 · ${checks} 处要你核实\n`);
+    }
   }
 } catch (error) {
   process.stderr.write(errorText(error, input));

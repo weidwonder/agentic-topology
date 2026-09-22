@@ -3,7 +3,7 @@
 # analysis_complete 在全部批次读完、自查清单过完之前一律是 false。
 
 schema_version: 1
-source_project: "/Users/weidwonder/projects/multica"
+source_project: "multica"
 generated_at: "2026-08-28"
 analysis_complete: true
 

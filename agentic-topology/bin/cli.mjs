@@ -25,9 +25,10 @@ const USAGE = `agentic-topology —— 把一个 agentic 应用的编排画成�
       把技能装进当前项目。装完直接对你的编码 agent 说
       「画一下这个项目的编排」就行，不需要你再敲任何命令。
 
-  npx agentic-topology render <描述文件> [-o <输出.html>] [--force]
+  npx agentic-topology render <描述文件> [-o <输出.html>] [--force] [--json]
       把一份编排描述渲染成可离线打开的单文件网页。
       <描述文件> 通常是上一步里 agent 自己读源码写出来的，不用你手写。
+      --json 在成功时改为输出一份机器可读收据（描述与产出各自的 sha256、字节数、节点/连线/核实清单数）。
 
   npx agentic-topology validate <描述文件> [--format json]
       只校验、不出图。

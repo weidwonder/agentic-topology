@@ -1,0 +1,96 @@
+# 测试夹具：与 mini-candidate-pass 一样，但去掉了 A→B 那条必需边，用来测覆盖闸的「missing_edge」失败路径。
+# 不追求整体 schema 完全合法（这份不用于测试 validate 闸），只保证 nodes[]/edges[] 结构齐全。
+
+schema_version: 1
+source_project: "~/projects/mini-fixture"
+generated_at: "2026-09-21"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "测试入口"
+  exits:
+    - name: "结束"
+      kind: normal
+      condition: "跑完"
+      source:
+        refs:
+          - "src/a.ts:1-2"
+        confirmed_at: "2026-09-21"
+
+nodes:
+  - id: A
+    name: "Agent A"
+    kind: agent
+    responsibility: "测试用 Agent A"
+    inputs: "测试输入"
+    outputs: "测试输出"
+    concurrency:
+      default: 1
+    system_prompt:
+      inline: "你是测试用 Agent A。"
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "跑完就停"
+      limits:
+        steps: not_set
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src/a.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+  - id: B
+    name: "Agent B"
+    kind: agent
+    responsibility: "测试用 Agent B"
+    inputs: "测试输入"
+    outputs: "测试输出"
+    concurrency:
+      default: 1
+    system_prompt:
+      inline: "你是测试用 Agent B。"
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "跑完就停"
+      limits:
+        steps: not_set
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src/b.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+  - id: merged_p
+    name: "合并的程序节点"
+    kind: program
+    responsibility: "把测试用的 P1（第一步）与 P2（第二步）合并在一起，各自的产物是测试产物一、测试产物二"
+    inputs: "测试输入"
+    outputs: "测试产物"
+    purpose: "测试合并留账"
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/p.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+information: []
+
+edges: []

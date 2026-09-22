@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "broken-suite-for-tests",
+  "purpose": "suite-integrity",
+  "evidence_eligible": false,
+  "cases": [
+    { "case": "cases/broken.case.json", "prompt": "cases/broken.case.json", "status": "ready" }
+  ]
+}

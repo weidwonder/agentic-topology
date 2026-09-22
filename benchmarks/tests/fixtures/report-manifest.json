@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "report-test-manifest",
+  "purpose": "suite-integrity",
+  "evidence_eligible": false,
+  "cases": [
+    { "case": "mini-case.case.json", "prompt": "mini-case.case.json", "status": "ready" }
+  ]
+}

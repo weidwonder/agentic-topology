@@ -1,0 +1,124 @@
+# 测试夹具：一份完全合法、且满足 mini-case.case.json 全部要求的最小候选描述。
+# P1/P2 被故意合并进 merged_p 一个节点，用来测「合并须留账」那条路径。
+
+schema_version: 1
+source_project: "~/projects/mini-fixture"
+generated_at: "2026-09-21"
+analysis_complete: true
+
+graph:
+  topology: fixed_workflow
+  context_sharing: isolated
+  entry: "测试入口"
+  exits:
+    - name: "结束"
+      kind: normal
+      condition: "跑完"
+      source:
+        refs:
+          - "src/a.ts:1-2"
+        confirmed_at: "2026-09-21"
+
+nodes:
+  - id: A
+    name: "Agent A"
+    kind: agent
+    responsibility: "测试用 Agent A"
+    inputs: "测试输入"
+    outputs: "测试输出"
+    concurrency:
+      default: 1
+    system_prompt:
+      inline: "你是测试用 Agent A。"
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "跑完就停"
+      limits:
+        steps: not_set
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src/a.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+  - id: B
+    name: "Agent B"
+    kind: agent
+    responsibility: "测试用 Agent B"
+    inputs: "测试输入"
+    outputs: "测试输出"
+    concurrency:
+      default: 1
+    system_prompt:
+      inline: "你是测试用 Agent B。"
+    tools: []
+    mcp: []
+    skills: []
+    stop:
+      conditions:
+        - "跑完就停"
+      limits:
+        steps: not_set
+        time: not_set
+        cost: not_set
+        consecutive_failures: not_set
+    spawns_subagents: false
+    confidence: certain
+    source:
+      refs:
+        - "src/b.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+  - id: merged_p
+    name: "合并的程序节点"
+    kind: program
+    responsibility: "把测试用的 P1（第一步）与 P2（第二步）合并在一起，各自的产物是测试产物一、测试产物二"
+    inputs: "测试输入"
+    outputs: "测试产物"
+    purpose: "测试合并留账"
+    concurrency:
+      default: 1
+    confidence: certain
+    source:
+      refs:
+        - "src/p.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+information:
+  - id: info-01
+    name: "测试传递物"
+    what: "测试传递物"
+    blocks:
+      - "测试传递物"
+    form: bundle
+    produced_at: "A 处理完时"
+    origin: A
+    destination: B
+    confidence: certain
+    source:
+      refs:
+        - "src/a.ts:1-10"
+      confirmed_at: "2026-09-21"
+
+edges:
+  - from: A
+    to: B
+    category: normal
+    trigger: "A 处理完"
+    payloads:
+      - info: info-01
+        carrier: bundle
+        delivered_at: "A 结束时"
+    concurrency_control: "不会发生"
+    confidence: certain
+    source:
+      refs:
+        - "src/a.ts:1-10"
+      confirmed_at: "2026-09-21"

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "agentic-topology-node-edge-floor-v1",
+  "purpose": "suite-integrity",
+  "_purpose_note": "本文件的作用是让 `check` 能自检套件本身自洽；它不是证据。任何一次真跑的 evidenceEligible 由 `report` 基于收据现场计算，不读这个字段。",
+  "evidence_eligible": false,
+  "cases": [
+    {
+      "case": "cases/aiudit-internal-control.case.json",
+      "prompt": "prompts/aiudit-internal-control.md",
+      "status": "ready"
+    },
+    {
+      "case": "cases/cpah-docs-pipeline.case.json",
+      "prompt": "prompts/cpah-docs-pipeline.md",
+      "status": "ready"
+    },
+    {
+      "case": "cases/third-project-pending.case.json",
+      "prompt": "prompts/third-project-pending.md",
+      "status": "pending"
+    }
+  ]
+}

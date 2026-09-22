@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "cpah-docs-pipeline",
+  "status": "ready",
+  "project": {
+    "name": "cpah-docs（Tauri 桌面工具：监控目录 → 转 Markdown → 可选 Agent 分类 → 索引）",
+    "hint_path": "~/projects/cpah-docs（外部项目，不随本仓分发；跑分前需使用者自行把源码摆到被测 Agent 能读到、但 benchmarks/ 读不到的地方）",
+    "read_scope": "src-tauri/src/ 12 个文件（tagging.rs 1334、runtime.rs 1359、storage.rs 1258、tag_runtime.rs 747、knowledge_index.rs 740、commands.rs 623、converter.rs 815、mineru.rs 474、models.rs 368、state.rs 276、index_runtime.rs 180、lib.rs 105 行）"
+  },
+  "provenance": {
+    "basis": [
+      "docs/report/基准项目分析核对.md §项目二",
+      "agentic-topology/tests/fixtures/benchmarks/cpah-docs.topology.yaml（第二轮：11 节点/13 边/2 Agent）"
+    ],
+    "cross_checked": true,
+    "caveat": "核对报告原话：第二轮的留账'只有一句笼统的“纯持久化/观测辅助合并进调用方”，非逐项'——不满足〈切法 MUST 可复现〉第 5 步。且第二轮本身把 MinerU 三步、分类队列两处、索引两处系统性地合并成了一处（'该拆没拆'），报告认定这不是更优的切法而是漏账。本 case 因此只把第二轮的 11 节点/13 边当成'调用边遗漏=0'的下限，凡候选在这些位置合并得更粗，MUST 按下方 merge_accounting_required 留账，否则判该处未过覆盖闸。"
+  },
+  "blind_test_eligible": true,
+  "blind_test_note": "2026-09-21 复核：对 agentic-topology/SKILL.md、agentic-topology/references/*.md、agentic-topology/assets/templates/example.topology.yaml 分别搜过 cpah / tauri / mineru / 分类 Agent / tool_calling_probe / 连通性探针 等这个项目专属的词，零命中（同一次复核在同样的检索范围里，为 aiudit_platform 找到了四处泄题，方法一致，参见 aiudit-internal-control.case.json 的 blind_test_note）。据此判定：就'本技能强制加载文档是否举过这个项目的例子'这一条，cpah-docs 目前是干净的，可以进入正式盲测轮。这条结论只在这些文档没有变化的前提下成立——下一次真的要跑之前 MUST 重新 grep 一遍，不能假设结论一直有效。",
+  "required_scope_refs": [
+    {
+      "path_contains": "src-tauri/src/tagging.rs",
+      "why": "两处系统提示词装配点都在这个文件：分类 Agent（232-325）与连通性探针 Agent（796-847）。第一轮分析方正是因为漏读了 796-847 这段小服务，把 AI 节点数从 2 数成了 1"
+    }
+  ],
+  "required_agent_nodes": [
+    {
+      "key": "classifier_agent",
+      "labels": ["文档分类 Agent", "分类 Agent", "Agent 分类", "Document Classifier Agent", "classifier_agent"],
+      "evidence_refs": ["src-tauri/src/tagging.rs:232-325", "src-tauri/src/tagging.rs:381-415", "src-tauri/src/tagging.rs:110-193"],
+      "why": "主数据流上的分类环节，两轮分析都识别到"
+    },
+    {
+      "key": "tool_calling_probe",
+      "labels": ["Tool Calling 连通性探针", "连通性探针 Agent", "cpah_tool_calling_probe", "Connectivity Probe Agent", "tool_calling_probe"],
+      "evidence_refs": ["src-tauri/src/tagging.rs:796-847"],
+      "why": "本基准套件里唯一一处'已知漏因'留证：这是一个条件性 Agent，只在使用者点“测试连接”时才跑，不在主数据流上，是第一轮分析方实际漏掉的那一个。它装配了独立的系统提示词（preamble）、独立的工具（dynamic_tool）、独立的步数上限（default_max_turns），按 references/节点粒度约定.md 的判据必须单独成节点"
+    }
+  ],
+  "endpoint_aliases": {
+    "monitor_scan": { "labels": ["监控目录扫描"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/runtime.rs:97-135", "src-tauri/src/runtime.rs:254-294", "src-tauri/src/runtime.rs:335-363"] },
+    "task_scheduler": { "labels": ["转换任务调度"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/runtime.rs:382-508", "src-tauri/src/runtime.rs:119-123"] },
+    "engine_choice": { "labels": ["选择转换引擎"], "kind_hint": "decision", "evidence_refs": ["src-tauri/src/converter.rs:13-16", "src-tauri/src/converter.rs:45-53", "src-tauri/src/runtime.rs:542-557"] },
+    "local_converter": { "labels": ["本地 anytomd 转换"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/converter.rs:154-206", "src-tauri/src/runtime.rs:565-594"] },
+    "mineru_converter": { "labels": ["MinerU 云端转换", "云端转换"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/runtime.rs:631-678", "src-tauri/src/mineru.rs:92-139", "src-tauri/src/mineru.rs:141-202", "src-tauri/src/mineru.rs:204-230"] },
+    "artifact_writer": { "labels": ["Markdown 产物写入"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/converter.rs:252-321", "src-tauri/src/runtime.rs:598-615"] },
+    "tag_queue": { "labels": ["分类队列调度"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/tag_runtime.rs:57-147", "src-tauri/src/tag_runtime.rs:172-237", "src-tauri/src/tag_runtime.rs:410-477", "src-tauri/src/tag_runtime.rs:487-548"] },
+    "index_builder": { "labels": ["知识库索引重建"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/index_runtime.rs:33-90", "src-tauri/src/index_runtime.rs:165-179", "src-tauri/src/knowledge_index.rs:27-40"] },
+    "settings_commands": { "labels": ["设置与分类命令"], "kind_hint": "program", "evidence_refs": ["src-tauri/src/commands.rs:287-310", "src-tauri/src/commands.rs:314-352", "src-tauri/src/commands.rs:355-378", "src-tauri/src/commands.rs:423-465", "src-tauri/src/commands.rs:479-490"] }
+  },
+  "required_edges": [
+    { "from": "monitor_scan", "to": "task_scheduler", "why": "扫描出的源文件路径与 Reconcile 消息交给任务调度", "evidence_refs": ["src-tauri/src/runtime.rs:102-115", "src-tauri/src/runtime.rs:141-180"] },
+    { "from": "task_scheduler", "to": "engine_choice", "why": "路径通过校验去重后交去决定走哪条转换引擎", "evidence_refs": ["src-tauri/src/runtime.rs:390-464"] },
+    { "from": "engine_choice", "to": "local_converter", "why": "本地可转格式走 anytomd", "evidence_refs": ["src-tauri/src/runtime.rs:565-594", "src-tauri/src/converter.rs:45-53"] },
+    { "from": "engine_choice", "to": "mineru_converter", "why": "PDF/图片等走 MinerU 云端解析", "evidence_refs": ["src-tauri/src/runtime.rs:565-596", "src-tauri/src/converter.rs:45-53"] },
+    { "from": "local_converter", "to": "artifact_writer", "why": "本地转换产物交去落盘", "evidence_refs": ["src-tauri/src/converter.rs:188-206", "src-tauri/src/runtime.rs:582-589"] },
+    { "from": "mineru_converter", "to": "artifact_writer", "why": "云端解析产物交去落盘", "evidence_refs": ["src-tauri/src/runtime.rs:653-677", "src-tauri/src/mineru.rs:204-230"] },
+    { "from": "artifact_writer", "to": "tag_queue", "why": "转换成功且启用分类、候选类别非空时进入分类队列", "evidence_refs": ["src-tauri/src/runtime.rs:598-615", "src-tauri/src/tag_runtime.rs:108-111"] },
+    { "from": "tag_queue", "to": "classifier_agent", "why": "排队后启动分类会话", "evidence_refs": ["src-tauri/src/tag_runtime.rs:415-487", "src-tauri/src/tagging.rs:344-411"] },
+    { "from": "classifier_agent", "to": "tag_queue", "why": "分类会话写完类别后把结果交回队列结算", "evidence_refs": ["src-tauri/src/tagging.rs:554-565", "src-tauri/src/tag_runtime.rs:497-548"] },
+    { "from": "settings_commands", "to": "tag_queue", "why": "保存分类设置/暂停切换/应用规则/手动重试都转成队列消息", "evidence_refs": ["src-tauri/src/commands.rs:287-310", "src-tauri/src/commands.rs:423-465", "src-tauri/src/commands.rs:479-490", "src-tauri/src/tag_runtime.rs:82-145"] },
+    { "from": "settings_commands", "to": "tool_calling_probe", "why": "用户调用 test_agent_connection 时触发连通性探针会话", "evidence_refs": ["src-tauri/src/commands.rs:355-378", "src-tauri/src/tagging.rs:796-847"] },
+    { "from": "artifact_writer", "to": "index_builder", "why": "输出目录里的 Markdown/附件变化被索引 watcher 观察到", "evidence_refs": ["src-tauri/src/index_runtime.rs:38-45", "src-tauri/src/index_runtime.rs:68-85"] },
+    { "from": "classifier_agent", "to": "index_builder", "why": "分类 Agent 原子替换 Markdown 后同样触发索引重建", "evidence_refs": ["src-tauri/src/tagging.rs:630-641", "src-tauri/src/index_runtime.rs:38-45", "src-tauri/src/index_runtime.rs:75-85"] }
+  ],
+  "merge_accounting_required": [
+    {
+      "cluster_key": "mineru-pipeline",
+      "applies_to_edges": [
+        { "from": "engine_choice", "to": "mineru_converter" },
+        { "from": "mineru_converter", "to": "artifact_writer" }
+      ],
+      "artifacts": ["MinerUSubmission（申请上传/提交凭据）", "ExtractResult（轮询解析得到的结果）", "ConversionArtifact（下载解包得到的产物）"],
+      "rule_ref": "节点粒度约定.md〈切法 MUST 可复现〉'最常见的违规是该拆没拆' + 事实基准同款示例（提交→轮询→下载三步）",
+      "note": "核对报告认定这三步各自的产物都被下一步单独读走，按判据该拆成 3 个节点，第二轮把它们合并成了 1 个'MinerU 云端转换'且没有逐项说明。候选若同样合并为 1 个节点，MUST 在该节点的 responsibility 里点名这三步与三个产物名；只写“云端处理”这类概括词不算留账。"
+    },
+    {
+      "cluster_key": "tag-queue-listen-vs-dispatch",
+      "applies_to_edges": [
+        { "from": "artifact_writer", "to": "tag_queue" }
+      ],
+      "artifacts": ["监听排队（收到 Path 消息入队）", "按并发启动（从队列取出任务、按并发上限发起分类会话）"],
+      "rule_ref": "核对报告〈第二轮：改规则后〉表格，'分类队列'一行：第一轮 2 个节点，第二轮合并成 1 个",
+      "note": "核对报告把这一处列为'该拆没拆'的第二个例子，但没有给出两步各自的产物名，只给了步骤名。候选若合并为 1 个'分类队列调度'节点，MUST 在 responsibility 里点名这两步；这一条比 mineru-pipeline 证据弱，留账要求写在这里但不构成独立的 required_edges。"
+    }
+  ],
+  "notes": "第一轮（16 节点/21 边）没有被存成 fixture，本 case 因此拿不到第一轮的完整节点边列表，只能引用核对报告里点名的三处'该拆没拆'（MinerU、分类队列、索引）。索引那一处报告没有给出产物名，未列入 merge_accounting_required，留白不编造。"
+}

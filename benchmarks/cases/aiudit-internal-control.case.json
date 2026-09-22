@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "id": "aiudit-internal-control",
+  "status": "ready",
+  "project": {
+    "name": "aiudit_platform 内控建设审计子模块",
+    "hint_path": "~/projects/aiudit_platform（外部项目，不随本仓分发；跑分前需使用者自行把源码摆到被测 Agent 能读到、但 benchmarks/ 读不到的地方）",
+    "read_scope": "src/main/internal-control/ 全部源文件（核对时读了 12 个文件，workflow.ts 1517 行、prompts.ts 420 行）"
+  },
+  "provenance": {
+    "basis": [
+      "docs/report/基准项目分析核对.md §项目一",
+      "agentic-topology/tests/fixtures/benchmarks/aiudit.topology.yaml",
+      "agentic-topology/references/节点粒度约定.md §事实基准（同一次抽取：10 节点/8 程序+2 Agent，15 条单向边同向合并后 14 条）",
+      "agentic-topology/tests/acceptance.test.mjs 对该 fixture 的断言（10 节点 14 边 2 个 AI）"
+    ],
+    "cross_checked": true,
+    "caveat": "这份 fixture 产出于〈粒度留账〉规则补齐之前，不含逐项候选边界留账（核对报告原话：'aiudit.topology.yaml：❌ 无（跑在规则补上之前）'）。本 case 把它列出的节点与边当成候选描述必须至少覆盖的下限，不当成唯一正确的切法——候选描述允许切得更细或更粗，但更粗时 MUST 按下方粒度留账口径在留下来的那个节点里说清楚合并了什么。"
+  },
+  "blind_test_eligible": false,
+  "blind_test_note": "【2026-09-21 使用者拍板：永久出局，不因文档修改而恢复】aiudit_platform 已登记进 docs/TODO.md〈教材项目池〉。根因是结构性的——教材必须有具体例子，具体例子必然泄题，所以教材池与基准池 MUST 互斥。把这几份文档改到不再举它的例子，并不能让它重新具备盲测资格：改文档只是消除这一次的泄题面，而它作为教材项目的身份不变，下次加新例子时还会再泄。本 case 的 required_agent_nodes / required_edges 数据仍然真实且经过核对，保留用途仅限自测 benchmark.mjs 自身的判定逻辑（见 benchmarks/tests/），MUST NOT 作为准出证据。\n\n以下是 2026-09-21 排查到的泄题面取证，保留备查：\n2026-09-21 复核发现：这个项目已经不满足 docs/TODO.md〈选基准项目的规矩〉'MUST NOT 是本技能任何一份强制加载文档拿来举例的项目'——比 multica 更严重，泄题面散在四份 SKILL.md 加载点清单里的强制文档中：(1) references/节点粒度约定.md §事实基准（169-176 行）逐字给出'一个内控审计编排被切成 10 个节点（8 个程序+2 个 Agent）与 15 条单向边（同向合并后 14 条）'，并点名'材料清册与指纹''台账复用查找''材料分组与规划提示词构建'三个节点、'补交提醒'与'取消信号'两条传递物如何合并——这就是这个 case 的答案本身；(2) references/编排描述格式.md 第 51 行的顶层字段示例直接写 `source_project: \"~/projects/aiudit_platform\"`，第 174 行 system_prompt 示例写'你是内控审计判定师'，第 264 行 exits 示例写'这一项内控点是什么'；(3) references/抽取纪律.md 第 60 行拿'补交提醒'当带外信号边的例子；(4) assets/templates/example.topology.yaml——SKILL.md 加载点清单里'想看一份能直接改的样例'指向的那份模板——节点名与结构几乎是 aiudit 的改写版（'材料清册与两个指纹''规划师''调度分发'等）。SKILL.md 的加载点清单要求填字段前必读编排描述格式.md、判粒度前必读节点粒度约定.md、读源码前必读抽取纪律.md、想看样例就读 example.topology.yaml——四条几乎覆盖了正常分析流程会读到的全部参考文档。在这些文档被改到不再举这个项目的例子之前，MUST NOT 拿 aiudit_platform 跑正式的盲测取证轮，其状态与 multica 相同。本 case 的 required_agent_nodes/required_edges 数据仍然保留（真实、经过核对），可以继续用来自测 benchmark.mjs 自身的判定逻辑是否正确（见 benchmarks/tests/），但不能作为准出证据。这几份文档在 agentic-topology/references/、agentic-topology/assets/ 之下，不属于本次交付范围（其他子代理在改），只如实记录发现。",
+  "required_scope_refs": [
+    {
+      "path_contains": "src/main/internal-control/prompts.ts",
+      "why": "规划 Agent（prompts.ts:42-46）与判定 Agent（prompts.ts:184-396）两套系统提示词都装配在这个文件里；Agent 判据就是「看系统提示词」，范围排除它就没法执行判据（参见 docs/TODO.md〈选基准项目的规矩〉，multica 那一轮就是这么错的）"
+    },
+    {
+      "path_contains": "src/main/internal-control/workflow.ts",
+      "why": "主编排、调度、回执处理与对账全部在这个文件（920-1035 行是判定 Agent 会话的发起与收尾）"
+    }
+  ],
+  "required_agent_nodes": [
+    {
+      "key": "planner",
+      "labels": [
+        "规划 Agent",
+        "台账规划 Agent",
+        "Planning Agent",
+        "Ledger Planner",
+        "planner"
+      ],
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:463-518",
+        "src/main/internal-control/prompts.ts:42-46"
+      ],
+      "why": "四个来源（试跑清单、分析方两轮、独立验证方）在这个项目上给出的 AI 节点数完全一致是 2，这是其中一个"
+    },
+    {
+      "key": "judge",
+      "labels": [
+        "内控判定 Agent",
+        "判定 Agent",
+        "判定会话",
+        "Judgement Agent",
+        "judge"
+      ],
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:591-714",
+        "src/main/internal-control/workflow.ts:920-1035",
+        "src/main/internal-control/prompts.ts:184-396"
+      ],
+      "why": "另一个；系统提示词单独装配，且有独立的步数/时间/连续失败上限，不是规划 Agent 的复用会话"
+    }
+  ],
+  "endpoint_aliases": {
+    "inventory": {
+      "labels": [
+        "材料清册与指纹",
+        "材料清单与指纹计算"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:200-224"
+      ]
+    },
+    "reuse": {
+      "labels": [
+        "台账复用查找",
+        "台账复用判断",
+        "复用判断"
+      ],
+      "kind_hint": "decision",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:228-242",
+        "src/main/internal-control/ledger-store.ts:45-75"
+      ]
+    },
+    "planning_prep": {
+      "labels": [
+        "材料分组与规划提示词构建",
+        "规划输入构建"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:463-485",
+        "src/main/internal-control/prompts.ts:80-160"
+      ]
+    },
+    "ledger_validate": {
+      "labels": [
+        "台账解析与校验",
+        "台账校验"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:519-586"
+      ]
+    },
+    "dispatch": {
+      "labels": [
+        "工作项切分与并发调度",
+        "调度"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/dispatch.ts:17-80",
+        "src/main/internal-control/workflow.ts:247-415"
+      ]
+    },
+    "receipt_validate": {
+      "labels": [
+        "回执契约校验",
+        "回执校验闸门"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:784-818",
+        "src/main/internal-control/receipt.ts:201-319"
+      ]
+    },
+    "evidence_gates": {
+      "labels": [
+        "检索与引文闸门",
+        "证据闸门"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:819-915",
+        "src/main/internal-control/search-evidence-audit.ts:117-195",
+        "src/main/internal-control/quote-audit.ts:143-252"
+      ]
+    },
+    "reconcile": {
+      "labels": [
+        "对账与报告生成",
+        "汇总对账"
+      ],
+      "kind_hint": "program",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:423-447",
+        "src/main/internal-control/reconcile.ts:66-153"
+      ]
+    }
+  },
+  "required_edges": [
+    {
+      "from": "inventory",
+      "to": "reuse",
+      "why": "材料清单与两项指纹交给复用判断",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:210-228"
+      ]
+    },
+    {
+      "from": "reuse",
+      "to": "planning_prep",
+      "why": "未命中复用时进入规划输入构建",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:228-242",
+        "src/main/internal-control/workflow.ts:452-485"
+      ]
+    },
+    {
+      "from": "reuse",
+      "to": "dispatch",
+      "why": "命中复用时台账直接进入工作项调度",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:228-245"
+      ]
+    },
+    {
+      "from": "planning_prep",
+      "to": "planner",
+      "why": "规划提示词与 plan-input.json 交给规划 Agent",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:473-518",
+        "src/main/internal-control/prompts.ts:114-160"
+      ]
+    },
+    {
+      "from": "planner",
+      "to": "ledger_validate",
+      "why": "规划会话产出 ledger.draft.json 交去校验",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:498-523"
+      ]
+    },
+    {
+      "from": "ledger_validate",
+      "to": "planner",
+      "why": "台账非法时把结构化退回原因回灌给下一次规划 attempt（失败回灌）",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:519-586"
+      ]
+    },
+    {
+      "from": "ledger_validate",
+      "to": "dispatch",
+      "why": "台账规范化成功后进入工作项切分",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:552-579",
+        "src/main/internal-control/workflow.ts:244-248"
+      ]
+    },
+    {
+      "from": "dispatch",
+      "to": "judge",
+      "why": "工作项进入滑动窗口并启动判定会话（含卡死/取消/配置错误信号与同会话追轮）",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:247-415",
+        "src/main/internal-control/workflow.ts:989-1035"
+      ]
+    },
+    {
+      "from": "judge",
+      "to": "receipt_validate",
+      "why": "判定 Agent 调用 submit_receipt 交去做契约校验",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:679-817"
+      ]
+    },
+    {
+      "from": "receipt_validate",
+      "to": "judge",
+      "why": "回执契约/范围/依据校验失败时退回同一会话重新提交（失败回灌）",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:723-739",
+        "src/main/internal-control/workflow.ts:793-818"
+      ]
+    },
+    {
+      "from": "receipt_validate",
+      "to": "evidence_gates",
+      "why": "结构与范围校验通过后交去检索与引文闸门",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:793-883"
+      ]
+    },
+    {
+      "from": "evidence_gates",
+      "to": "judge",
+      "why": "检索或引文不合格时退回同一会话（失败回灌）",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:819-915"
+      ]
+    },
+    {
+      "from": "evidence_gates",
+      "to": "reconcile",
+      "why": "闸门通过或按未核验放行后汇入对账",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:916-917",
+        "src/main/internal-control/workflow.ts:420-426"
+      ]
+    },
+    {
+      "from": "dispatch",
+      "to": "reconcile",
+      "why": "工作项失败/缺回执/配置错误终止后同样进入汇总阶段",
+      "evidence_refs": [
+        "src/main/internal-control/workflow.ts:375-415",
+        "src/main/internal-control/workflow.ts:423-439"
+      ]
+    }
+  ],
+  "merge_accounting_required": [],
+  "notes": "独立验证方按自己的切法数出 17 条边，核对报告确认与分析方描述逐条对应（同向合并、观测型旁路和节点内部传递除外，见核对报告原文）。验证方用的是一套更粗的名字（'工作流''回执处理器''编排''汇总对账'等），本 case 没有把那套名字逐一对回 fixture 的节点 id——凡是没能在 fixture 与报告里同时钉死映射关系的，没有写进 required_edges，留白，不编造。"
+}

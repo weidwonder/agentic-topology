@@ -4,32 +4,38 @@
 
 Draw the orchestration of an agentic app as a diagram you can click into.
 
+## One line
+
 Point it at a repo and say "draw this project's orchestration." It reads the source and pulls out
 **which AIs exist, what tools each one has, what the deterministic code between them does, who calls
 whom, and what gets handed over** — then renders **a single HTML file that opens offline**.
 
-![Orchestration overview](./assets/images/en/overview.png)
+It isn't the same kind of tool as the diagramming app you already use:
 
-That is the bundled sample rendered with `--lang en`. Fill color says only who is doing the work:
-blue for AI, orange for program, purple for branch point. Every line says **which pieces of
-information it carries** — the icon is how each one is handed over, and clicking a name lights up
-every line carrying that same piece. Under the canvas, *what moves around in this picture* lists
-them all. **It tells you what it found, not what it thinks of it.**
+> A general-purpose drawing tool is an **expression tool** — you already know what the system looks
+> like, and you need to tell someone else. This project is a **survey tool** — you don't know what
+> the system looks like yet, and you need to find out first. The former's output carries a
+> conclusion; the latter's output is where the investigation starts.
 
-> The prose on the diagram — box names, what each one does, what each piece of information is —
-> is the analysed project's own words, and `--lang en` never translates it. So these screenshots
-> come from an English sample. For a diagram read from a **real** 1,500-line internal-audit module
-> (10 boxes, 14 connections, 4 things flagged to verify), see the
-> [Chinese README](./README.zh-CN.md).
+So **it states only what it read. It does not judge your architecture or suggest improvements.**
+The point is to let you see clearly enough to judge for yourself.
 
-Click any box and its full detail opens in a panel — **every box and every connection carries a
-`file:line` citation**:
+---
 
-![Node detail](./assets/images/en/detail.png)
+## What these three screenshots answer
 
-Too many boxes? Collapse them by group. Nothing is dropped when you do:
+These come from the bundled English sample, rendered with `--lang en` — not a real project. The
+prose on the diagram (box names, what each one does, what each piece of information is) is the
+analysed project's own words, and `--lang en` never translates it, so a Chinese-language codebase
+would produce a diagram in Chinese regardless of this flag. That's why these screenshots use an
+English sample instead of a real one. For a diagram read from a **real** 1,500-line internal-audit
+module (10 boxes, 14 connections, 4 things flagged to verify), see the
+[Chinese README](./README.zh-CN.md).
 
-![Folded view](./assets/images/en/folded.png)
+| Who's doing the work, who calls whom | What this one box received and handed over | Too many boxes — did anything get lost |
+|---|---|---|
+| [![Orchestration overview](./assets/images/en/overview.png)](./assets/images/en/overview.png) | [![Node detail](./assets/images/en/detail.png)](./assets/images/en/detail.png) | [![Folded view](./assets/images/en/folded.png)](./assets/images/en/folded.png) |
+| Fill color says only who is doing the work: blue for AI, orange for program, purple for branch point. Click a name and every line carrying that piece of information lights up. | Click any box and a panel opens with its prompt range, the tools it can use, and what it received and handed over — **every one of them citing a `file:line`**. | Collapse by group and not one box or line is dropped; unfold and every ID still matches. |
 
 ---
 
@@ -45,56 +51,33 @@ Then **say one sentence to your coding agent**:
 
 That's it. The diagram lands in your working directory; double-click to open.
 
-**You never write a description file and never run another command.** The next section explains why.
+**You never write a description file and never run another command.** Not sure what happens behind
+the scenes, or whether you should write one yourself? See
+[What is `<description-file>`? Do I have to write it?](#what-is-description-file-do-i-have-to-write-it)
+further down.
 
 ---
 
-## What is `<description-file>`? Do I have to write it?
+## Boundaries it holds
 
-**No. Not a single character.**
+Compared with a general-purpose drawing tool, this is the real difference — not a disclaimer, but
+constraints with tests behind them:
 
-There's an intermediate artifact here called an **orchestration description**
-(`<topic>.topology.yaml`). Seeing `<description-file>` in the CLI usage, people often assume it's a
-form they have to fill in. It isn't. Here's where it comes from:
-
-```
-   you say "draw this project's orchestration"
-              ↓
-   the agent reads the source and writes <topic>.topology.yaml itself   ← created here
-              ↓
-   a validator checks it line by line (fails → no diagram, and it names what's missing)
-              ↓
-   rendered to <topic>.topology.html                                    ← what you open
-```
-
-**The description is written by the agent for the validator — not by you.** It exists for exactly
-one reason:
-
-> Let the **model do the reading**, and let a **deterministic program decide whether what it read
-> is allowed to become a diagram**.
->
-> The model may misread or read partially. What it *cannot* do is bypass the check — omit a required
-> field, invent a node ID that doesn't exist, or label a guess as verified. The validator refuses to
-> render and points at the exact spot. That boundary is why this diagram is worth trusting.
-
-Keeping it on disk buys two more things: **you can edit it directly** (then re-render), and
-**a later run can resume** — a description with `analysis_complete: false` keeps the boxes and
-connections already found.
-
-### When you actually type a command
-
-Only two cases:
-
-| Case | Command |
+| Constraint | How it's enforced |
 |---|---|
-| You already have a description and just want the diagram | `npx agentic-topology render <description-file>` |
-| You edited a description and want to check it | `npx agentic-topology validate <description-file>` |
-
-On the normal path you need neither.
+| **Your project is only ever read** | The renderer **refuses** to write the diagram inside the analyzed project, and a test holds that. The analysis side is held by the extraction discipline rather than by a test — check it yourself with `git status` before and after |
+| **Exactly one place writes files** | Only `scripts/lib/write-output.mjs` touches filesystem writes; asserted on both call shape and `node:fs` named imports |
+| **Same description, same diagram** | Byte-identical when neither the description nor the analyzed project has changed. No timestamps, no randomness, nothing depending on iteration order. The one thing that does track outside change is the "this diagram may be stale" notice — it reads source-file mtimes, which is exactly what it's for. (Positions you drag live in that HTML file itself; re-rendering returns to the computed layout) |
+| **Guesses are never shown as facts** | The validator rejects "documentation-only source but marked verified"; fill color carries type only, while confidence gets its own channel — a dashed border plus a badge |
+| **Nothing is silently dropped** | Crowding is handled by folding and filtering; unfold restores every ID |
+| **No network** | Zero dependencies; the output is one HTML file that works offline. Even the Markdown in the page goes through a tiny renderer that ships with it — no CDN, no external assets |
+| **The skill is self-contained** | It references and depends on no other skill, with a test scanning every deliverable |
 
 ---
 
 ## What ends up on the diagram
+
+### Each box: who's doing it, and how far it goes
 
 | On the diagram | What it means |
 |---|---|
@@ -102,12 +85,32 @@ On the normal path you need neither.
 | **Each AI's system prompt** | Which file, which lines — click to expand that exact range |
 | **Tools / MCP / Skills** | What each AI has. "None" is written as `[]`; "couldn't determine" gets a ⚠ badge instead, so the two never blur together |
 | **When it stops** | Steps, time, cost, consecutive failures — all four, and "not set" is stated explicitly |
+
+### Connections: who calls whom, carrying what
+
+| On the diagram | What it means |
+|---|---|
 | **Who calls whom, carrying what** | Every connection carries its trigger, concurrency control, and the pieces of information it hands over — each reference saying *how* it is handed over and *when* |
 | **What moves around, as a thing in its own right** | Each piece of information is written **once** and referenced by every line that carries it, so "these three lines all carry the same thing" is visible instead of guessed. The line shows its name plus a one-character icon for how it's handed over (at most three, then *+N total*); click a name and every line carrying it lights up while the rest fade. A list under the canvas — and a full seven-column view — gives what it is, roughly what's inside, what form it takes, where it comes from and ends up, and where that was found |
 | **"These two might be the same thing"** | When the reading can't establish that two pieces are the same, they stay **separate**, both marked *a guess*, with one pointing at the other — and that pair lands in the verify-this list by name. It never quietly merges them to make the chain look tidy |
+
+### Where it starts and where it ends
+
+| On the diagram | What it means |
+|---|---|
 | **Where it starts and where it ends** | Bracketing the canvas: the entry path sits above the diagram, and the normal, abnormal, and cancelled exits below it |
+
+### How sure it is, and what's left for you to check
+
+| On the diagram | What it means |
+|---|---|
 | **How sure it is** | Four levels: landed (verified) / inferred (a guess) / missing (couldn't determine) / by design. All four carry a badge; the last three also get a dashed border. You can filter on it |
 | **Verify-this list** | A ⚠ badge in the corner of the box it belongs to, a tooltip on the connection, or a badge next to the piece of information in the list; the top bar carries only the total — click the thing you want to check, no separate table to hunt through |
+
+### Laid out the way you want
+
+| On the diagram | What it means |
+|---|---|
 | **Chinese or English** | `--lang zh` (the default) or `--lang en` switches the page's own wording. The description's prose is never translated |
 | **Laid out the way you want** | Boxes and groups drag, connections re-route live; "save the positions into this file" writes them back into the same HTML so it opens that way next time (browsers without the File System Access API download a new copy for you to overwrite instead), and one click restores the automatic layout |
 
@@ -164,19 +167,49 @@ which field is missing.
 
 ---
 
-## Boundaries it holds
+<a id="what-is-description-file-do-i-have-to-write-it"></a>
+## What is `<description-file>`? Do I have to write it?
 
-These aren't design aspirations. They're constraints with tests behind them:
+**No. Not a single character.**
 
-| Constraint | How it's enforced |
+There's an intermediate artifact here called an **orchestration description**
+(`<topic>.topology.yaml`). Seeing `<description-file>` in the CLI usage, people often assume it's a
+form they have to fill in. It isn't. Here's where it comes from:
+
+```
+   you say "draw this project's orchestration"
+              ↓
+   the agent reads the source and writes <topic>.topology.yaml itself   ← created here
+              ↓
+   a validator checks it line by line (fails → no diagram, and it names what's missing)
+              ↓
+   rendered to <topic>.topology.html                                    ← what you open
+```
+
+**The description is written by the agent for the validator — not by you.** It exists for exactly
+one reason:
+
+> Let the **model do the reading**, and let a **deterministic program decide whether what it read
+> is allowed to become a diagram**.
+>
+> The model may misread or read partially. What it *cannot* do is bypass the check — omit a required
+> field, invent a node ID that doesn't exist, or label a guess as verified. The validator refuses to
+> render and points at the exact spot. That boundary is why this diagram is worth trusting.
+
+Keeping it on disk buys two more things: **you can edit it directly** (then re-render), and
+**a later run can resume** — a description with `analysis_complete: false` keeps the boxes and
+connections already found.
+
+### When you actually type a command
+
+Only two cases:
+
+| Case | Command |
 |---|---|
-| **Your project is only ever read** | The renderer **refuses** to write the diagram inside the analyzed project, and a test holds that. The analysis side is held by the extraction discipline rather than by a test — check it yourself with `git status` before and after |
-| **Exactly one place writes files** | Only `scripts/lib/write-output.mjs` touches filesystem writes; asserted on both call shape and `node:fs` named imports |
-| **Same description, same diagram** | Byte-identical when neither the description nor the analyzed project has changed. No timestamps, no randomness, nothing depending on iteration order. The one thing that does track outside change is the "this diagram may be stale" notice — it reads source-file mtimes, which is exactly what it's for. (Positions you drag live in that HTML file itself; re-rendering returns to the computed layout) |
-| **Guesses are never shown as facts** | The validator rejects "documentation-only source but marked verified"; fill color carries type only, while confidence gets its own channel — a dashed border plus a badge |
-| **Nothing is silently dropped** | Crowding is handled by folding and filtering; unfold restores every ID |
-| **No network** | Zero dependencies; the output is one HTML file that works offline. Even the Markdown in the page goes through a tiny renderer that ships with it — no CDN, no external assets |
-| **The skill is self-contained** | It references and depends on no other skill, with a test scanning every deliverable |
+| You already have a description and just want the diagram | `npx agentic-topology render <description-file>` |
+| You edited a description and want to check it | `npx agentic-topology validate <description-file>` |
+
+On the normal path you need neither.
 
 ---
 
@@ -209,15 +242,25 @@ staleness notices, information as a first-class thing with click-to-highlight, C
 **Missing**: the ship line requires **zero missed agent nodes and zero missed call edges across 3
 real projects**. It is **not met**. Three things are outstanding:
 
-1. **A third benchmark project.** The one we ran excluded the very package that assembles the system
-   prompt — while "which system prompt is assembled" is exactly the criterion for what counts as an
-   Agent. On top of that, one of this skill's own mandatory-load references uses that project as a
-   worked example and states the answer, so the blind test could not be blind. That round is void.
-2. **A granularity ledger for the first two projects.** The "zero missed edges" metric leans on
+1. **Two of the three projects we ran are permanently disqualified.** On 2026-09-21 the leak surface
+   was swept mechanically for the first time, and the cause turned out to be structural: this skill's
+   teaching examples and its exam questions were drawn from the same projects. `multica` appears in
+   `节点粒度约定.md` as its worked example; `aiudit_platform` is worse — that file's §事实基准
+   **states the node count, the edge count, the agent count, and two specific merge decisions
+   verbatim**, and three further references each use it as an example. SKILL.md requires an agent to
+   read all of those before analysing anything, so an agent following the normal flow **necessarily**
+   reads the answer first: the blind test could not be blind. (`multica` also carried a second fault —
+   its scope excluded the very package that assembles the system prompt, while "which system prompt is
+   assembled" is exactly the criterion for what counts as an Agent.) Only `cpah-docs` remains eligible,
+   so **two replacement projects are needed**.
+2. **The granularity ledger has never passed.** The "zero missed edges" metric leans on
    "a merge into a node MUST be recorded" — that record is its only anti-gaming check. Without it,
    coarsening the cut until transfers sink inside nodes scores a zero while information is genuinely
-   lost. So those two zeros are "measured as zero," not "established as zero."
+   lost. So the zeros on record are "measured as zero," not "established as zero."
 3. No single round has yet satisfied all three at once: correct scope, complete ledger, no leak.
+
+What is owed, what counts as evidence, and how leakage is prevented are written up in
+`benchmarks/README.md`; `benchmarks/benchmark.mjs` refuses to issue a receipt for a leaked project.
 
 **Known gaps**: runtime tracing (it reads static source, so branches decided at runtime are
 invisible), prompt redaction on export, and no way to express "a phase inside a single session."

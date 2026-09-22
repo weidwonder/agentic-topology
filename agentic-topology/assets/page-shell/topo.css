@@ -15,7 +15,13 @@
 .topo-edge.is-ok { stroke: var(--success); }
 .topo-edge.is-back { stroke: var(--destructive); }
 .topo-edge.is-inferred, .topo-edge.is-unread { stroke-dasharray: 5 4; }
-.topo-elabel { font-size: 10.5px; fill: var(--muted-foreground); paint-order: stroke fill; stroke: var(--card); stroke-width: 3.5px; stroke-linejoin: round; }
+/* x/y 由 layout.mjs 的 labelBox() 当「这行字的中心点」算：退让搜的是一圈候选中心点，
+   躲不躲得开卡片全靠这个假设成立。SVG text 默认 text-anchor:start（x 记左端）、
+   dominant-baseline:auto（y 记字母基线，不是竖直中心）——两条默认值都不是「中心点」，
+   不补上这两行，退让算法在模型里判定零压叠，画到屏幕上却整体偏右（约半个字宽）、
+   偏下（约小半个字高），因而仍会压到旁边的方块。这两个属性把浏览器的锚点语义拉回跟
+   labelBox() 一致，两套坐标系才真正对得上（tests/label-anchor.test.mjs 拿真 Chrome 钉住）。 */
+.topo-elabel { font-size: 10.5px; fill: var(--muted-foreground); paint-order: stroke fill; stroke: var(--card); stroke-width: 3.5px; stroke-linejoin: round; text-anchor: middle; dominant-baseline: central; }
 /* 底色只管「这是什么块」：AI 蓝、程序黄、岔路口紫。
    查得准不准是另一个维度，走虚线边框 + 徽章，MUST NOT 也来抢底色——否则一份全是推测的设计稿
    会整张图一个颜色，等于没分类。 */

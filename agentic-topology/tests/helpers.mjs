@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -103,4 +103,55 @@ export function catchErr(fn) {
 /** 两个矩形是否相交（边界相接不算相交）。 */
 export function intersects(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/**
+ * 找 Chrome/Chromium，找不到返回 null——跟 tools/visual-check.mjs 同一套探测顺序。
+ * 供需要真浏览器（量 getBoundingClientRect、模拟拖动）的测试共用，
+ * 那类测试 MUST 在找不到 Chrome 时用 `t.skip()` 明确跳过，不能悄悄判通过。
+ */
+export function findChrome() {
+  if (process.env.CHROME) return existsSync(process.env.CHROME) ? process.env.CHROME : null;
+  if (process.platform === 'darwin') {
+    for (const candidate of [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ]) if (existsSync(candidate)) return candidate;
+    return null;
+  }
+  if (process.platform === 'win32') {
+    for (const root of [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean)) {
+      for (const rel of ['Google/Chrome/Application/chrome.exe', 'Chromium/Application/chrome.exe']) {
+        const candidate = path.join(root, ...rel.split('/'));
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return null;
+  }
+  const dirs = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const command of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    for (const dir of dirs) {
+      const candidate = path.join(dir, command);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * 在真 Chrome 里打开一份 HTML、跑一段探测脚本，从注入的 `document.title` 里读回结果。
+ * 跟 tools/visual-check.mjs 同一套「把测量结果编码进 title 再用 --dump-dom 读回来」的写法——
+ * 不追求 DevTools pipe 那套更优雅的机制，先把浏览器里的真实结果拿到手更要紧。
+ */
+export function runInChrome(chrome, html, probeScript, { window: windowSize = '1440,900', workDir } = {}) {
+  mkdirSync(workDir, { recursive: true });
+  const probe = path.join(workDir, `probe-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+  writeFileSync(probe, html.replace('</body>', `${probeScript}</body>`));
+  const result = spawnSync(chrome, [
+    '--headless', '--disable-gpu', '--no-sandbox', '--hide-scrollbars', '--dump-dom',
+    '--virtual-time-budget=4000', `--window-size=${windowSize}`, `file://${probe}`,
+  ], { encoding: 'utf8', timeout: 30000 });
+  const hit = /<title>R=([^<]*)<\/title>/.exec(result.stdout || '');
+  assert.ok(hit, `量不出探测结果：\n${result.stderr || result.stdout}`);
+  return JSON.parse(decodeURIComponent(hit[1]));
 }

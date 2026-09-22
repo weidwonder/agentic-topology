@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "mini-case-compromised",
+  "status": "ready",
+  "project": { "name": "测试用最小项目（模拟已泄题）", "hint_path": "n/a", "read_scope": "n/a" },
+  "provenance": { "basis": ["benchmark.mjs 自己的测试夹具，不对应任何真实项目"], "cross_checked": false, "caveat": "仅供 benchmarks/tests 自测使用" },
+  "blind_test_eligible": false,
+  "blind_test_note": "测试夹具：故意标成 false，用来测 verify/record-failure 对泄题 case 的拦截。",
+  "required_scope_refs": [
+    { "path_contains": "src/a.ts", "why": "测试范围闸" }
+  ],
+  "required_agent_nodes": [
+    { "key": "A", "labels": ["Agent A", "node-a"], "evidence_refs": [], "why": "测试用" },
+    { "key": "B", "labels": ["Agent B", "node-b"], "evidence_refs": [], "why": "测试用" }
+  ],
+  "endpoint_aliases": {},
+  "required_edges": [
+    { "from": "A", "to": "B", "why": "测试直连边", "evidence_refs": [] }
+  ],
+  "merge_accounting_required": [],
+  "notes": "夹具，仅供测试。"
+}
