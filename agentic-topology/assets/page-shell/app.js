@@ -420,6 +420,58 @@ function fitGroups() {
   }
 }
 
+// ---- 画布自动伸缩 -----------------------------------------------------------
+// .topo-stage 出图时是程序按内容算好的固定像素尺寸，子元素全部 position:absolute——
+// 把方块拖出这个尺寸以外，只是让它出现在 .topo-wrap 的可滚动范围以外：往右/往下拖，
+// 用户还能滚过去看见；往左/往上拖，CSS 的 scrollLeft/scrollTop 压根滚不到负坐标，
+// 元素等于直接从看得见的地方消失。所以画布要跟着「长」：往右/往下超出，直接把
+// .topo-stage 撑大就够了；往左/往上超出没法把元素塞进负坐标里，只能把**全部**
+// 方块与分组框一起往右/往下平移一截、画布也跟着撑大——效果上就是画布的原点跟着「退」了
+// 一截，元素之间的相对位置完全没变，只是坐标系整体挪了个窝。
+//
+// 平移量每次都从当前实际位置**重新算一遍**（钉住「最靠左/最靠上的那个元素离画布边缘
+// 正好留 CANVAS_MARGIN」这条不变量），不用一个累加器去记「挪过几次、挪了多少」——
+// 这样元素拖回来的时候，画布和其余元素能照样跟着退回去，不用再写一段单独的「收缩」逻辑，
+// 也不会因为来回拖几次而累出浮点误差。
+const CANVAS_MARGIN = 32; // 跟 layout.mjs 的 M.STAGE_PAD 同一个数：出图时画布四周本来就留这么多白边。
+
+/** 画布里两类会被拖动、因此可能跑到边缘外面的元素：方块与分组框。 */
+function canvasMembers() {
+  return [...document.querySelectorAll('#view-overview .topo-node, #view-overview .topo-frame')];
+}
+
+/**
+ * 把画布重新收放到刚好装下当前所有元素：原始尺寸（.topo-stage 的 data-w/data-h，
+ * 程序按内容算出来的那个数）是下限，MUST NOT 缩得比它更小。
+ * SVG 的 viewBox 要跟着 .topo-stage 的像素尺寸同步改——两者不对齐的话，
+ * viewBox 与渲染框的比例一变，浏览器会把画好的连线整体缩放搬位，而不是单纯露出空白。
+ */
+function growCanvasToFit() {
+  const stageElement = stage();
+  const members = canvasMembers();
+  if (!stageElement || members.length === 0) return;
+  const boxes = members.map(boxOf);
+  const minX = Math.min(...boxes.map((box) => box.x));
+  const minY = Math.min(...boxes.map((box) => box.y));
+  const shiftX = CANVAS_MARGIN - minX;
+  const shiftY = CANVAS_MARGIN - minY;
+  if (shiftX !== 0 || shiftY !== 0) {
+    for (const element of members) {
+      const box = boxOf(element);
+      moveElement(element, box.x + shiftX, box.y + shiftY);
+    }
+  }
+  const shifted = shiftX !== 0 || shiftY !== 0 ? members.map(boxOf) : boxes;
+  const maxX = Math.max(...shifted.map((box) => box.x + box.w));
+  const maxY = Math.max(...shifted.map((box) => box.y + box.h));
+  const w = Math.max(Number(stageElement.dataset.w) || 0, Math.ceil(maxX + CANVAS_MARGIN));
+  const h = Math.max(Number(stageElement.dataset.h) || 0, Math.ceil(maxY + CANVAS_MARGIN));
+  if (stageElement.style.width !== `${w}px`) stageElement.style.width = `${w}px`;
+  if (stageElement.style.height !== `${h}px`) stageElement.style.height = `${h}px`;
+  const svg = document.querySelector('#view-overview .topo-edges');
+  if (svg) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+}
+
 function startDrag(event) {
   const target = event.target.closest('.topo-node, .topo-frame');
   if (!target || !stage()?.contains(target)) return;
@@ -442,6 +494,8 @@ function startDrag(event) {
     moveElement(target, startBox.x + dx, startBox.y + dy);
     for (const follower of followerBoxes) moveElement(follower.node, follower.box.x + dx, follower.box.y + dy);
     if (!isGroup) fitGroups();
+    // 画布伸缩要跟手：紧跟在这一帧的位置算完之后就重算，不等拖动结束才补一下。
+    growCanvasToFit();
     redrawEdges();
   };
   const onUp = () => {
@@ -483,6 +537,10 @@ function applyPositions(positions) {
     if (frame) moveElement(frame, point.x, point.y);
   }
   fitGroups();
+  // 存回文件时画布的尺寸没有单独存一份——它能从存下来的方块/分组框坐标**唯一确定**
+  // （growCanvasToFit 是纯函数：同一组坐标永远算出同一个尺寸），另存一份等于第二份真相，
+  // 两处一旦改动不同步，图重开就会跟保存那一刻长得不一样。
+  growCanvasToFit();
   redrawEdges();
 }
 
@@ -493,6 +551,9 @@ function resetPositions() {
     frame.style.width = `${frame.dataset.w}px`;
     frame.style.height = `${frame.dataset.h}px`;
   }
+  // 方块与分组框都退回程序算出来的原位之后，画布按同一套公式重算，
+  // 会正好落回 .topo-stage 的 data-w/data-h——「恢复自动摆放」也把画布尺寸一并恢复了。
+  growCanvasToFit();
   redrawEdges();
   markDirty(true);
 }

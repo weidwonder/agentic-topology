@@ -446,7 +446,17 @@ export function layout(data, { lang = 'zh' } = {}) {
   // 分组框 MUST NOT 算障碍物——堆内的边整条线都在自己那个框里，把框当障碍就无处可放，
   // 结果是每条标注都退让失败、退回原点，反而比不退让更糟。分组框在最底层，
   // 标注压在它上面照样完整可辨（CSS 的 z-index + 标注自带描边光晕）。
-  const obstacles = [...nodes.values()];
+  //
+  // 卡片高度是 nodeHeight() 按字数估出来的**下限**，节点渲染成 min-height（见
+  // render-html.mjs 的 nodeHtml 注释：「宁可比连线锚点略高一点，也 MUST NOT 让文字漏出卡片」）——
+  // Markdown 描述最后那个块元素还带一份 CSS 里的 margin-bottom（topo.css 的
+  // `.topo-node-desc .topo-md p/ul/ol { margin: 0 0 4px }`），这几像素估算表里没算。
+  // 出图这一步没有真浏览器可量，只能取一个安全余量：实测 aiudit 这份 fixture 十张卡片，
+  // 估算与 Chrome 实际渲染高度最多差 5.6px（`tools/visual-check.mjs` 量出来的数）。
+  // 只加在**退让用的障碍框**上、不改 nodeHeight() 本身——nodeHeight() 还要驱动同列下一行的
+  // 起始 y 与整张图的高度，动它会牵连纵向总高（那条溢出问题不在这轮范围内，不能顺手碰）。
+  const NODE_OBSTACLE_SLACK = 6;
+  const obstacles = [...nodes.values()].map((box) => ({ ...box, h: box.h + NODE_OBSTACLE_SLACK }));
   // 接点 MUST 先按全图算完再逐条画：一条边的落点取决于同一条边框上还挂着几条线，
   // 边画边算是算不出来的。
   const plans = [];

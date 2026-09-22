@@ -369,8 +369,11 @@ function overview(data, pageLayout, staleness) {
     `<button class="btn btn-ghost btn-sm" data-reset-layout>${esc(WORDS.labels.resetLayout)}</button>` +
     `<span class="topo-canvas-hint" data-canvas-hint>${esc(WORDS.labels.dragHint)}</span></div>`;
   // 发起说明与收尾说明 MUST 都待在画布外面：它们是这张图的前言和后记，不是图上的元素。
+  // data-w/data-h：程序算出来的原始尺寸，app.js 的画布自动伸缩拿它当「缩小的下限」——
+  // 元素拖回来之后画布跟着缩，但 MUST NOT 缩得比程序算出来的这个数还小。
   const diagram = `${pill}${infoBar}<div class="topo-wrap">${canvasBar}` +
-    `<div class="topo-stage" style="width:${pageLayout.stage.w}px;` +
+    `<div class="topo-stage" data-w="${pageLayout.stage.w}" data-h="${pageLayout.stage.h}"` +
+    ` style="width:${pageLayout.stage.w}px;` +
     `height:${pageLayout.stage.h}px"><svg class="topo-edges"` +
     ` viewBox="0 0 ${pageLayout.stage.w} ${pageLayout.stage.h}"` +
     ` aria-hidden="true">${markers}${edges}</svg>${frames}${nodes}</div></div>`;
