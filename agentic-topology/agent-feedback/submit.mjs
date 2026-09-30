@@ -214,10 +214,11 @@ function validateSubmission(input) {
 // ../shared/src/frontmatter.ts
 function unquote(v) {
   const s = v.trim();
-  if (s.length >= 2 && (s[0] === '"' || s[0] === "'") && s[s.length - 1] === s[0]) {
-    return s.slice(1, -1);
+  if (s[0] === '"' || s[0] === "'") {
+    const end = s.indexOf(s[0], 1);
+    if (end > 0) return s.slice(1, end);
   }
-  return s;
+  return s.replace(/(^|\s)#.*$/, "").trim();
 }
 function parseFrontmatter(text) {
   const lines = text.replace(/^﻿/, "").split(/\r?\n/);
