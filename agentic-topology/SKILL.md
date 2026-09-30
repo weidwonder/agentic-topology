@@ -1,6 +1,8 @@
 ---
 name: agentic-topology
 description: 把一个 agentic 应用的编排画成一张能点开下钻的图。读源码抽出它有哪些 AI、各自能用什么工具、程序段夹在中间干什么、谁调谁、传了什么，填成一份编排描述，再渲染成可离线打开的单文件网页。使用者说「画一下这个项目/仓库的编排」「这套多 agent 系统是谁调谁」，或用英文说 "draw the orchestration of this repo" / "map out this multi-agent system"，以及要拓扑图或架构图、要梳理这里有几个 agent、要看谁调用谁、asking which agent calls which or how many agents a codebase has 时，都用它；也支持直接拿一份写好的描述出图。它只陈述读到的事实，不评价架构好坏、不给改进建议，也不做与 agent 编排无关的通用绘图或流程图。
+metadata:
+  version: "0.2.0"
 ---
 
 # agentic-topology

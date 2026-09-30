@@ -1,6 +1,6 @@
 {
   "name": "agentic-topology",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Draw the orchestration of an agentic app as a diagram you can click into. Reads the source for which AIs exist, what tools each has, who calls whom and what gets handed over, then renders a single HTML file that opens offline.",
   "keywords": ["agent", "agentic", "topology", "orchestration", "diagram", "claude-code", "skill"],
   "license": "MIT",
